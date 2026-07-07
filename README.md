@@ -30,8 +30,10 @@ esp32-ai-dashboard/
   data/mock/dashboard.json        Mock API response
   docs/ARCHITECTURE.md            System architecture
   docs/API.md                     Dashboard JSON contract
+  docs/BACKEND.md                 Backend implementation notes
   firmware/                       PlatformIO firmware project
   server/mock_server.py           Local mock HTTP server
+  server/backend.py               Real backend skeleton
 ```
 
 ## Local Mock Server
@@ -46,6 +48,16 @@ Endpoint:
 ```text
 GET /api/eink-dashboard
 ```
+
+## Backend Server
+
+```bash
+cd /root/esp32-ai-dashboard
+python3 server/backend.py --host 0.0.0.0 --port 8787 --refresh 300
+```
+
+The backend already returns real Linux server metrics and mock/provider-based
+Claude, Codex and weather data. See `docs/BACKEND.md`.
 
 ## Firmware
 
