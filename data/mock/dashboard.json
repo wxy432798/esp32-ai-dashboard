@@ -1,0 +1,47 @@
+{
+  "refresh_interval_sec": 300,
+  "updated_at": "2026-07-07 02:36",
+  "claude": {
+    "daily_percent": 72,
+    "weekly_percent": 68,
+    "daily_reset": "1h24m",
+    "weekly_reset": "5d3h",
+    "model": "Opus",
+    "requests_today": 128,
+    "used_today": "3h12m"
+  },
+  "codex": {
+    "daily_percent": 58,
+    "weekly_percent": 43,
+    "daily_reset": "3h12m",
+    "weekly_reset": "4d8h",
+    "model": "GPT-4o",
+    "requests_today": 96,
+    "used_today": "1h48m"
+  },
+  "server": {
+    "online": true,
+    "cpu": 18,
+    "ram": 46,
+    "disk": 32,
+    "load_avg": 0.28,
+    "uptime": "5d12h"
+  },
+  "weather": {
+    "temperature": 28.6,
+    "humidity": 62,
+    "wind": "SE",
+    "wind_speed": "2.1m/s",
+    "condition": "Cloudy"
+  },
+  "todos": [
+    { "text": "投稿 - 法国灯光节", "due": "07-10", "done": true },
+    { "text": "回复律师邮件", "due": "07-07", "done": true },
+    { "text": "日本签证材料准备", "due": "07-20", "done": false },
+    { "text": "学车 - 科目二", "due": "07-15", "done": false },
+    { "text": "画表情包", "due": "07-08", "done": true },
+    { "text": "找天津朋友", "due": "07-18", "done": false },
+    { "text": "找重庆朋友", "due": "07-25", "done": false }
+  ],
+  "note": "保持专注，持续创造。"
+}
