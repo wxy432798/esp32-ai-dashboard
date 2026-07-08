@@ -56,7 +56,7 @@ def dashboard_payload(refresh_interval_sec=DEFAULT_REFRESH_SEC):
         "uptime": server.get("uptime", ""),
         "server": server,
         "weather": get_weather(),
-        "todos": len(todos),
+        "todos": todos,
         "todo_items": todos,
         "todo_count": len(todos),
         "note": load_note(),
