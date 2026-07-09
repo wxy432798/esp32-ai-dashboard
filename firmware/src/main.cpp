@@ -2,6 +2,7 @@
 #include <Preferences.h>
 #include <SPI.h>
 #include <WiFi.h>
+#include <esp_wifi.h>
 
 #include "DashboardApi.h"
 #include "DashboardUI.h"
@@ -63,6 +64,7 @@ static void connectWifi() {
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
+  esp_wifi_set_ps(WIFI_PS_NONE);
   Serial.printf("WiFi SSID=%s", WIFI_SSID);
 
   uint32_t started = millis();

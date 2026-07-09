@@ -2,6 +2,7 @@
 
 #include <ArduinoJson.h>
 #include <WiFiClient.h>
+#include <lwip/sockets.h>
 
 #include "config.h"
 
@@ -72,6 +73,14 @@ static bool openHttpGet(WiFiClient& client, const char* path, const char* accept
     return false;
   }
   client.setNoDelay(true);
+  const int enable = 1;
+  const int keepIdleSeconds = 15;
+  const int keepIntervalSeconds = 5;
+  const int keepCount = 3;
+  client.setSocketOption(SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable));
+  client.setSocketOption(IPPROTO_TCP, TCP_KEEPIDLE, &keepIdleSeconds, sizeof(keepIdleSeconds));
+  client.setSocketOption(IPPROTO_TCP, TCP_KEEPINTVL, &keepIntervalSeconds, sizeof(keepIntervalSeconds));
+  client.setSocketOption(IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(keepCount));
 
   client.printf("GET %s HTTP/1.1\r\n", path);
   client.printf("Host: %s\r\n", DASHBOARD_API_HOST);
@@ -92,7 +101,8 @@ static bool openHttpGet(WiFiClient& client, const char* path, const char* accept
     return false;
   }
   Serial.println(line);
-  if (!line.startsWith("HTTP/1.") || line.indexOf(" 200 ") < 0) {
+  if (!line.startsWith("HTTP/1.") ||
+      (line.indexOf(" 200 ") < 0 && line.indexOf(" 206 ") < 0)) {
     error = "Bad HTTP status: " + line;
     client.stop();
     return false;
@@ -174,6 +184,39 @@ static void copyFrameByte(EInkFrame& frame, uint8_t* header, size_t absoluteOffs
   }
 }
 
+static bool fetchFrameChunk(const String& basePath, size_t offset, size_t expected,
+                            uint8_t* chunk, String& error) {
+  String path = basePath + "?offset=" + String(static_cast<unsigned>(offset)) +
+                "&length=" + String(static_cast<unsigned>(expected));
+
+  static const uint8_t CHUNK_ATTEMPTS = 15;
+  for (uint8_t attempt = 1; attempt <= CHUNK_ATTEMPTS; attempt++) {
+    Serial.printf("Chunk %u attempt %u/%u\n",
+                  static_cast<unsigned>(offset), attempt, CHUNK_ATTEMPTS);
+    WiFiClient client;
+    int contentLength = -1;
+    if (!openHttpGet(client, path.c_str(), "application/octet-stream",
+                     contentLength, error)) {
+      delay(500);
+      continue;
+    }
+    if (contentLength >= 0 && contentLength != static_cast<int>(expected)) {
+      error = "Bad chunk length " + String(contentLength) + "/" + String(expected);
+      client.stop();
+      delay(500);
+      continue;
+    }
+    if (!readExact(client, chunk, expected, 30000, error)) {
+      client.stop();
+      delay(500);
+      continue;
+    }
+    client.stop();
+    return true;
+  }
+  return false;
+}
+
 bool DashboardApi::fetchManifest(FrameManifest& manifest, String& error) {
   for (uint8_t attempt = 1; attempt <= 5; attempt++) {
     Serial.printf("Manifest attempt %u/5\n", attempt);
@@ -238,34 +281,17 @@ bool DashboardApi::fetchFrame(const FrameManifest& manifest, EInkFrame& frame,
 
     const String basePath = manifest.url.length() ? manifest.url : String(DASHBOARD_FRAME_PATH);
     const size_t totalBytes = manifest.bytes > 0 ? manifest.bytes : HEADER_LEN + EINK_PLANE_BYTES * 2;
-    static const size_t CHUNK_LEN = 1024;
+    static const size_t CHUNK_LEN = 4096;
     uint8_t chunk[CHUNK_LEN];
     bool downloaded = true;
 
     for (size_t offset = 0; offset < totalBytes; offset += CHUNK_LEN) {
       const size_t expected = min(CHUNK_LEN, totalBytes - offset);
-      String path = basePath + "?offset=" + String(static_cast<unsigned>(offset)) +
-                    "&length=" + String(static_cast<unsigned>(expected));
 
-      WiFiClient client;
-      int contentLength = -1;
-      if (!openHttpGet(client, path.c_str(), "application/octet-stream",
-                       contentLength, error)) {
+      if (!fetchFrameChunk(basePath, offset, expected, chunk, error)) {
         downloaded = false;
         break;
       }
-      if (contentLength >= 0 && contentLength != static_cast<int>(expected)) {
-        error = "Bad chunk length " + String(contentLength) + "/" + String(expected);
-        client.stop();
-        downloaded = false;
-        break;
-      }
-      if (!readExact(client, chunk, expected, 30000, error)) {
-        client.stop();
-        downloaded = false;
-        break;
-      }
-      client.stop();
 
       for (size_t i = 0; i < expected; i++) {
         copyFrameByte(frame, header, offset + i, chunk[i]);

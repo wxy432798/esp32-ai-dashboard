@@ -69,7 +69,7 @@ Recommended endpoints:
 GET /api/eink-dashboard
 GET /render/eink.png
 GET /render/eink.bin
-GET /render/eink.bin?offset=0&length=1024
+GET /render/eink.bin?offset=0&length=4096
 GET /render/manifest.json
 ```
 
@@ -79,7 +79,7 @@ GET /render/manifest.json
 
 `/render/eink.bin` returns the packed tri-color bitplanes for the ESP32.
 
-`/render/eink.bin?offset=0&length=1024` returns a small byte range from the
+`/render/eink.bin?offset=0&length=4096` returns a small byte range from the
 same BIN frame. This is the preferred ESP32 download mode on weak Wi-Fi links,
 because repeated short HTTP responses are more reliable than one 30KB response.
 
