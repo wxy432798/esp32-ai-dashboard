@@ -84,14 +84,14 @@ static void refreshDashboard(bool forced) {
 
   String error;
   if (WiFi.status() != WL_CONNECTED) {
-    ui.renderStatus("WiFi Failed", "Could not connect");
+    Serial.println("WiFi failed; preserving current e-paper image");
     nextRefreshAt = millis() + static_cast<uint32_t>(localRefreshSeconds) * 1000UL;
     return;
   }
 
   if (!api.fetchManifest(manifest, error)) {
     Serial.printf("Manifest failed: %s\n", error.c_str());
-    ui.renderStatus("Sync Failed", error.substring(0, 32));
+    Serial.println("Manifest failed; preserving current e-paper image");
     nextRefreshAt = millis() + static_cast<uint32_t>(localRefreshSeconds) * 1000UL;
     return;
   }
@@ -104,7 +104,7 @@ static void refreshDashboard(bool forced) {
 
   if (!api.fetchFrame(manifest, frame, error)) {
     Serial.printf("Frame failed: %s\n", error.c_str());
-    ui.renderStatus("Frame Failed", error.substring(0, 32));
+    Serial.println("Frame failed; preserving current e-paper image");
     nextRefreshAt = millis() + static_cast<uint32_t>(effectiveRefreshSeconds()) * 1000UL;
     return;
   }

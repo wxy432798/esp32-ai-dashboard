@@ -5,7 +5,7 @@ import os
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 from providers.ai_usage import get_ai_usage
 from renderer import ensure_rendered_frame
@@ -95,6 +95,30 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def _render_file_response(self, file_path, content_type):
+        raw = file_path.read_bytes()
+        query = parse_qs(urlparse(self.path).query)
+        if "offset" in query or "length" in query:
+            try:
+                offset = max(0, int(query.get("offset", ["0"])[0]))
+                length = max(0, int(query.get("length", [str(len(raw) - offset)])[0]))
+            except ValueError:
+                self._json(400, {"error": "invalid offset/length"})
+                return
+            if offset > len(raw):
+                self._json(416, {"error": "offset outside frame"})
+                return
+            chunk = raw[offset:offset + length]
+            self.send_response(206)
+            self.send_header("content-type", content_type)
+            self.send_header("cache-control", "public, max-age=60")
+            self.send_header("content-length", str(len(chunk)))
+            self.send_header("content-range", f"bytes {offset}-{offset + len(chunk) - 1}/{len(raw)}")
+            self.end_headers()
+            self.wfile.write(chunk)
+            return
+        self._bytes(200, content_type, raw)
+
     def _read_json(self):
         length = int(self.headers.get("content-length") or "0")
         raw = self.rfile.read(length) if length else b"{}"
@@ -128,7 +152,7 @@ class Handler(BaseHTTPRequestHandler):
                 cache_key = "png" if path.endswith(".png") else "bin"
                 file_path = Path(manifest["cache"][cache_key])
                 content_type = "image/png" if cache_key == "png" else "application/octet-stream"
-                self._bytes(200, content_type, file_path.read_bytes())
+                self._render_file_response(file_path, content_type)
                 return
             except Exception as exc:
                 self._json(503, {"error": "render failed", "detail": str(exc)})
