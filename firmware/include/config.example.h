@@ -5,8 +5,15 @@
 #define WIFI_SSID "YOUR_WIFI"
 #define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
 
-// Example: "http://192.168.1.10:8787/api/eink-dashboard"
-#define DASHBOARD_API_URL "http://192.168.1.10:8787/api/eink-dashboard"
+// Example final URL: "http://107.172.147.113/api/eink-dashboard".
+// The raw HTTP client uses host/port/path so it can retry reliably on ESP32.
+#define DASHBOARD_API_URL "http://YOUR_SERVER/api/eink-dashboard"
+#define DASHBOARD_API_HOST "YOUR_SERVER"
+#define DASHBOARD_API_PORT 80
+#define DASHBOARD_API_PATH "/api/eink-dashboard"
+
+// Optional. Leave empty if the backend endpoint is in open test mode.
+#define ESP32_API_KEY ""
 
 // Refresh fallback if the server does not provide meta.refresh_seconds.
 #define DEFAULT_REFRESH_SECONDS 300
@@ -14,7 +21,7 @@
 // Side button: active LOW, using INPUT_PULLUP.
 #define PIN_SIDE_BUTTON 0
 
-// Typical ESP32 + e-paper SPI wiring. Adjust to your board.
+// Confirmed ESP32 + GDEY042Z98 e-paper SPI wiring.
 #define EPD_BUSY 4
 #define EPD_RST 16
 #define EPD_DC 17

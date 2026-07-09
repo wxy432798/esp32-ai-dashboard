@@ -8,7 +8,7 @@
 #include "DisplayConfig.h"
 #include "config.h"
 
-DashboardDisplay display(GxEPD2_420c(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
+DashboardDisplay display(DashboardPanel(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
 DashboardUI ui(display);
 DashboardApi api;
 DashboardData dashboard;
