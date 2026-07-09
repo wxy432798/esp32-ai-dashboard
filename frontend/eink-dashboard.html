@@ -1,0 +1,238 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=400, height=300, initial-scale=1">
+  <style>
+    :root {
+      --black: #111;
+      --red: #d32f1f;
+      --paper: #fffdf7;
+    }
+
+    * { box-sizing: border-box; }
+
+    html,
+    body {
+      width: 400px;
+      height: 300px;
+      margin: 0;
+      overflow: hidden;
+      background: var(--paper);
+      color: var(--black);
+      font-family: "Noto Sans", "Noto Sans CJK SC", Arial, sans-serif;
+    }
+
+    .page {
+      width: 400px;
+      height: 300px;
+      padding: 10px;
+      display: grid;
+      grid-template-columns: 123px 123px 124px;
+      grid-template-rows: 74px 82px 96px 24px;
+      gap: 6px;
+    }
+
+    .panel {
+      border: 2px solid var(--black);
+      padding: 5px 6px;
+      overflow: hidden;
+      background: var(--paper);
+    }
+
+    .title {
+      font-size: 12px;
+      line-height: 13px;
+      font-weight: 800;
+      text-transform: uppercase;
+      margin-bottom: 4px;
+      white-space: nowrap;
+    }
+
+    .muted {
+      font-size: 9px;
+      line-height: 11px;
+    }
+
+    .big {
+      font-size: 22px;
+      line-height: 24px;
+      font-weight: 900;
+      letter-spacing: 0;
+    }
+
+    .red { color: var(--red); }
+
+    .bar {
+      height: 8px;
+      border: 1px solid var(--black);
+      margin: 3px 0;
+      position: relative;
+      background: #fff;
+    }
+
+    .fill {
+      height: 100%;
+      background: var(--black);
+    }
+
+    .fill.red {
+      background: var(--red);
+    }
+
+    .metric {
+      display: flex;
+      justify-content: space-between;
+      gap: 4px;
+      font-size: 9px;
+      line-height: 11px;
+      white-space: nowrap;
+    }
+
+    .server {
+      grid-column: 3;
+      grid-row: 1 / span 2;
+    }
+
+    .weather {
+      grid-column: 1;
+      grid-row: 2;
+    }
+
+    .todos {
+      grid-column: 1 / span 2;
+      grid-row: 3;
+    }
+
+    .note {
+      grid-column: 3;
+      grid-row: 3;
+    }
+
+    .footer {
+      grid-column: 1 / span 3;
+      grid-row: 4;
+      border-top: 2px solid var(--black);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 10px;
+      line-height: 12px;
+      padding: 2px 2px 0;
+      overflow: hidden;
+    }
+
+    .todo {
+      display: grid;
+      grid-template-columns: 12px 1fr 34px;
+      gap: 4px;
+      align-items: center;
+      font-size: 10px;
+      line-height: 12px;
+      height: 12px;
+      overflow: hidden;
+    }
+
+    .box {
+      width: 8px;
+      height: 8px;
+      border: 1px solid var(--black);
+    }
+
+    .box.done {
+      background: var(--red);
+      border-color: var(--red);
+    }
+
+    .truncate {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+    }
+  </style>
+</head>
+<body>
+  <main class="page" id="app"></main>
+  <script>
+    const data = __DASHBOARD_JSON__;
+    const pct = (value) => Math.max(0, Math.min(100, Number(value || 0)));
+    const text = (value, fallback = "") => (value === undefined || value === null || value === "") ? fallback : String(value);
+
+    function aiPanel(name, block, accent) {
+      const daily = pct(block.daily_percent);
+      const weekly = pct(block.weekly_percent);
+      return `
+        <section class="panel">
+          <div class="title ${accent ? "red" : ""}">${name}</div>
+          <div class="metric"><span>Daily</span><strong>${daily}%</strong></div>
+          <div class="bar"><div class="fill ${accent ? "red" : ""}" style="width:${daily}%"></div></div>
+          <div class="metric"><span>Weekly</span><strong>${weekly}%</strong></div>
+          <div class="bar"><div class="fill" style="width:${weekly}%"></div></div>
+          <div class="muted">${text(block.model)} · ${text(block.daily_reset)}</div>
+        </section>`;
+    }
+
+    function serverPanel(server) {
+      return `
+        <section class="panel server">
+          <div class="title">Server</div>
+          <div class="big ${server.online ? "" : "red"}">${server.online ? "ONLINE" : "DOWN"}</div>
+          ${metric("CPU", server.cpu)}
+          ${metric("RAM", server.ram)}
+          ${metric("Disk", server.disk)}
+          <div class="muted">Load ${text(server.load_avg)} · Up ${text(server.uptime)}</div>
+        </section>`;
+    }
+
+    function metric(label, value) {
+      const safe = pct(value);
+      return `
+        <div class="metric"><span>${label}</span><strong>${safe}%</strong></div>
+        <div class="bar"><div class="fill" style="width:${safe}%"></div></div>`;
+    }
+
+    function weatherPanel(weather) {
+      return `
+        <section class="panel weather">
+          <div class="title">Weather</div>
+          <div class="big">${Math.round(Number(weather.temperature || 0))}°</div>
+          <div class="metric"><span>Humidity</span><strong>${text(weather.humidity)}%</strong></div>
+          <div class="metric"><span>Wind</span><strong>${text(weather.wind_speed)}</strong></div>
+          <div class="muted">${text(weather.condition)} · ${text(weather.wind)}</div>
+        </section>`;
+    }
+
+    function todosPanel(items) {
+      const rows = (items || []).slice(0, 6).map((item) => `
+        <div class="todo">
+          <span class="box ${item.done ? "done" : ""}"></span>
+          <span class="truncate">${text(item.text)}</span>
+          <strong>${text(item.due)}</strong>
+        </div>`).join("");
+      return `
+        <section class="panel todos">
+          <div class="title">To-Do</div>
+          ${rows}
+        </section>`;
+    }
+
+    function notePanel(note) {
+      return `
+        <section class="panel note">
+          <div class="title red">Note</div>
+          <div class="muted">${text(note, "No note").slice(0, 80)}</div>
+        </section>`;
+    }
+
+    document.getElementById("app").innerHTML = [
+      aiPanel("Claude", data.claude || {}, true),
+      aiPanel("Codex", data.codex || {}, false),
+      serverPanel(data.server || {}),
+      weatherPanel(data.weather || {}),
+      todosPanel(data.todos || data.todo_items || []),
+      notePanel(data.note),
+      `<footer class="footer"><strong>AI Dashboard</strong><span>${text(data.updated_at)}</span></footer>`
+    ].join("");
+  </script>
+</body>
+</html>

@@ -181,9 +181,6 @@ render_cache/
   latest.json
   latest.png
   latest.bin
-  frames/
-    20260710-004000.png
-    20260710-004000.bin
 ```
 
 Render a new frame when:
@@ -195,6 +192,10 @@ Render a new frame when:
 
 ESP32 should usually request `manifest.json` first. If `version` and `crc32`
 are unchanged, it can skip downloading the BIN.
+
+The first deployed implementation intentionally keeps only `latest.*` files.
+It overwrites the previous frame instead of storing historical images, so a
+5-minute refresh cadence does not grow disk usage over time.
 
 ## ESP32 Responsibilities
 
@@ -274,4 +275,3 @@ Partial refresh can be added later with a manifest like:
 ```
 
 For the first stable version, prefer full refresh only.
-

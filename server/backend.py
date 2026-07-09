@@ -4,9 +4,11 @@ import json
 import os
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from pathlib import Path
 from urllib.parse import urlparse
 
 from providers.ai_usage import get_ai_usage
+from renderer import ensure_rendered_frame
 from providers.system_metrics import get_server_status
 from providers.weather import get_weather
 from state_store import add_todo, delete_todo, load_note, load_todos, save_note, set_todo_done
@@ -85,10 +87,22 @@ class Handler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def _bytes(self, status, content_type, raw, cache_control="public, max-age=60"):
+        self.send_response(status)
+        self.send_header("content-type", content_type)
+        self.send_header("cache-control", cache_control)
+        self.send_header("content-length", str(len(raw)))
+        self.end_headers()
+        self.wfile.write(raw)
+
     def _read_json(self):
         length = int(self.headers.get("content-length") or "0")
         raw = self.rfile.read(length) if length else b"{}"
         return json.loads(raw.decode("utf-8") or "{}")
+
+    def _render_manifest(self):
+        payload = dashboard_payload(self.refresh_interval_sec)
+        return ensure_rendered_frame(payload, self.refresh_interval_sec)
 
     def do_GET(self):
         path = urlparse(self.path).path
@@ -101,6 +115,24 @@ class Handler(BaseHTTPRequestHandler):
                 return
             self._json(200, dashboard_payload(self.refresh_interval_sec))
             return
+        if path in ("/render/manifest.json", "/render/eink.png", "/render/eink.bin"):
+            if not self._authorized():
+                self._json(401, {"error": "missing or invalid api key"})
+                return
+            try:
+                manifest = self._render_manifest()
+                if path == "/render/manifest.json":
+                    public = {key: value for key, value in manifest.items() if key != "cache"}
+                    self._json(200, public)
+                    return
+                cache_key = "png" if path.endswith(".png") else "bin"
+                file_path = Path(manifest["cache"][cache_key])
+                content_type = "image/png" if cache_key == "png" else "application/octet-stream"
+                self._bytes(200, content_type, file_path.read_bytes())
+                return
+            except Exception as exc:
+                self._json(503, {"error": "render failed", "detail": str(exc)})
+                return
         self._json(404, {"error": "not found"})
 
     def do_POST(self):
