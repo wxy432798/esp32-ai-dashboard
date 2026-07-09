@@ -5,12 +5,11 @@
 #define WIFI_SSID "YOUR_WIFI"
 #define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
 
-// Example final URL: "http://107.172.147.113/api/eink-dashboard".
 // The raw HTTP client uses host/port/path so it can retry reliably on ESP32.
-#define DASHBOARD_API_URL "http://YOUR_SERVER/api/eink-dashboard"
 #define DASHBOARD_API_HOST "YOUR_SERVER"
 #define DASHBOARD_API_PORT 80
-#define DASHBOARD_API_PATH "/api/eink-dashboard"
+#define DASHBOARD_MANIFEST_PATH "/render/manifest.json"
+#define DASHBOARD_FRAME_PATH "/render/eink.bin"
 
 // Optional. Leave empty if the backend endpoint is in open test mode.
 #define ESP32_API_KEY ""

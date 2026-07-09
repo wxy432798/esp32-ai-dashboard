@@ -11,32 +11,37 @@
 DashboardDisplay display(DashboardPanel(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
 DashboardUI ui(display);
 DashboardApi api;
-DashboardData dashboard;
+FrameManifest manifest;
+EInkFrame frame;
 Preferences prefs;
 
 uint32_t nextRefreshAt = 0;
-String lastStatus = "booting";
 uint16_t localRefreshSeconds = DEFAULT_REFRESH_SECONDS;
+String lastFrameCrc;
 
 static const uint16_t REFRESH_OPTIONS[] = {60, 300, 600, 900, 1800, 3600};
 static const size_t REFRESH_OPTIONS_COUNT = sizeof(REFRESH_OPTIONS) / sizeof(REFRESH_OPTIONS[0]);
 static const uint32_t LONG_PRESS_MS = 1200;
 
 static uint16_t effectiveRefreshSeconds() {
-  if (dashboard.meta.hasServerRefreshInterval && dashboard.meta.refreshSeconds > 0) {
-    return dashboard.meta.refreshSeconds;
-  }
+  if (manifest.refreshSeconds > 0) return manifest.refreshSeconds;
   return localRefreshSeconds;
 }
 
-static void loadRefreshPreference() {
+static void loadPreferences() {
   prefs.begin("dashboard", false);
   localRefreshSeconds = prefs.getUShort("refresh_s", DEFAULT_REFRESH_SECONDS);
+  lastFrameCrc = prefs.getString("frame_crc", "");
 }
 
 static void saveRefreshPreference(uint16_t seconds) {
   localRefreshSeconds = seconds;
   prefs.putUShort("refresh_s", seconds);
+}
+
+static void saveFrameCrc(const String& crc) {
+  lastFrameCrc = crc;
+  prefs.putString("frame_crc", crc);
 }
 
 static void cycleRefreshPreference() {
@@ -48,53 +53,81 @@ static void cycleRefreshPreference() {
     }
   }
   saveRefreshPreference(REFRESH_OPTIONS[next]);
-  lastStatus = "Refresh " + String(localRefreshSeconds / 60) + " min saved";
-  ui.render(dashboard, lastStatus);
+  Serial.printf("Local refresh interval saved: %u seconds\n", localRefreshSeconds);
 }
 
 static void connectWifi() {
+  if (WiFi.status() == WL_CONNECTED) return;
+
   WiFi.mode(WIFI_STA);
+  WiFi.setSleep(false);
+  WiFi.setAutoReconnect(true);
   WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
-  Serial.print("WiFi");
+  Serial.printf("WiFi SSID=%s", WIFI_SSID);
+
   uint32_t started = millis();
   while (WiFi.status() != WL_CONNECTED && millis() - started < 20000) {
     delay(500);
     Serial.print(".");
   }
   Serial.println();
+
   if (WiFi.status() == WL_CONNECTED) {
-    Serial.print("IP: ");
-    Serial.println(WiFi.localIP());
-    lastStatus = "online";
+    Serial.printf("IP=%s RSSI=%d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
   } else {
-    lastStatus = "wifi failed";
+    Serial.println("WiFi failed");
   }
 }
 
 static void refreshDashboard(bool forced) {
-  if (WiFi.status() != WL_CONNECTED) connectWifi();
+  connectWifi();
 
   String error;
-  if (WiFi.status() == WL_CONNECTED && api.fetch(dashboard, error)) {
-    lastStatus = forced ? "manual refresh ok" : "refresh ok";
-  } else {
-    lastStatus = "Last Sync Failed";
+  if (WiFi.status() != WL_CONNECTED) {
+    ui.renderStatus("WiFi Failed", "Could not connect");
+    nextRefreshAt = millis() + static_cast<uint32_t>(localRefreshSeconds) * 1000UL;
+    return;
   }
 
-  ui.render(dashboard, lastStatus);
-  nextRefreshAt = millis() + effectiveRefreshSeconds() * 1000UL;
+  if (!api.fetchManifest(manifest, error)) {
+    Serial.printf("Manifest failed: %s\n", error.c_str());
+    ui.renderStatus("Sync Failed", error.substring(0, 32));
+    nextRefreshAt = millis() + static_cast<uint32_t>(localRefreshSeconds) * 1000UL;
+    return;
+  }
+
+  if (!forced && manifest.crc32Hex == lastFrameCrc) {
+    Serial.printf("Frame unchanged crc=%s; skipping download\n", manifest.crc32Hex.c_str());
+    nextRefreshAt = millis() + static_cast<uint32_t>(effectiveRefreshSeconds()) * 1000UL;
+    return;
+  }
+
+  if (!api.fetchFrame(manifest, frame, error)) {
+    Serial.printf("Frame failed: %s\n", error.c_str());
+    ui.renderStatus("Frame Failed", error.substring(0, 32));
+    nextRefreshAt = millis() + static_cast<uint32_t>(effectiveRefreshSeconds()) * 1000UL;
+    return;
+  }
+
+  ui.renderFrame(frame);
+  saveFrameCrc(manifest.crc32Hex);
+  Serial.printf("Displayed frame crc=%s refresh=%us forced=%s\n",
+                manifest.crc32Hex.c_str(), effectiveRefreshSeconds(),
+                forced ? "true" : "false");
+  nextRefreshAt = millis() + static_cast<uint32_t>(effectiveRefreshSeconds()) * 1000UL;
 }
 
 void setup() {
   Serial.begin(115200);
   delay(200);
+  Serial.println();
+  Serial.println("ESP32 server-rendered e-ink dashboard boot");
 
   pinMode(PIN_SIDE_BUTTON, INPUT_PULLUP);
   SPI.begin(EPD_SCK, -1, EPD_MOSI, EPD_CS);
-  loadRefreshPreference();
+  loadPreferences();
 
   ui.begin();
-  connectWifi();
   refreshDashboard(true);
 }
 
@@ -117,6 +150,7 @@ void loop() {
   if (lastButton == LOW && button == HIGH) {
     uint32_t held = millis() - pressedAt;
     if (!longHandled && held > 40) {
+      Serial.println("Manual refresh");
       refreshDashboard(true);
     }
   }
