@@ -85,7 +85,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("cache-control", "no-store")
         self.send_header("content-length", str(len(raw)))
         self.end_headers()
-        self.wfile.write(raw)
+        if self.command != "HEAD":
+            self.wfile.write(raw)
 
     def _bytes(self, status, content_type, raw, cache_control="public, max-age=60"):
         self.send_response(status)
@@ -93,7 +94,8 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("cache-control", cache_control)
         self.send_header("content-length", str(len(raw)))
         self.end_headers()
-        self.wfile.write(raw)
+        if self.command != "HEAD":
+            self.wfile.write(raw)
 
     def _render_file_response(self, file_path, content_type):
         raw = file_path.read_bytes()
@@ -115,7 +117,8 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("content-length", str(len(chunk)))
             self.send_header("content-range", f"bytes {offset}-{offset + len(chunk) - 1}/{len(raw)}")
             self.end_headers()
-            self.wfile.write(chunk)
+            if self.command != "HEAD":
+                self.wfile.write(chunk)
             return
         self._bytes(200, content_type, raw)
 
@@ -158,6 +161,9 @@ class Handler(BaseHTTPRequestHandler):
                 self._json(503, {"error": "render failed", "detail": str(exc)})
                 return
         self._json(404, {"error": "not found"})
+
+    def do_HEAD(self):
+        self.do_GET()
 
     def do_POST(self):
         path = urlparse(self.path).path
