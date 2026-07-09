@@ -5,9 +5,12 @@
   <meta name="viewport" content="width=400, height=300, initial-scale=1">
   <style>
     :root {
-      --black: #111;
-      --red: #d32f1f;
-      --paper: #fffdf7;
+      --paper: #efe9dd;
+      --card: #f7f2e8;
+      --ink: #23201b;
+      --muted: #8a7e6e;
+      --soft: #d8cdb9;
+      --red: #b5573a;
     }
 
     * { box-sizing: border-box; }
@@ -19,124 +22,338 @@
       margin: 0;
       overflow: hidden;
       background: var(--paper);
-      color: var(--black);
-      font-family: "Noto Sans", "Noto Sans CJK SC", Arial, sans-serif;
+      color: var(--ink);
+      font-family: "Noto Sans Mono", "Noto Sans CJK SC", "DejaVu Sans Mono", monospace;
+      letter-spacing: 0;
+    }
+
+    body::after {
+      content: "";
+      position: fixed;
+      inset: 0;
+      pointer-events: none;
+      background: repeating-linear-gradient(0deg, rgba(35, 32, 27, .05) 0 1px, transparent 1px 3px);
+      mix-blend-mode: multiply;
     }
 
     .page {
       width: 400px;
       height: 300px;
-      padding: 10px;
+      padding: 6px 7px;
       display: grid;
-      grid-template-columns: 123px 123px 124px;
-      grid-template-rows: 74px 82px 96px 24px;
-      gap: 6px;
-    }
-
-    .panel {
-      border: 2px solid var(--black);
-      padding: 5px 6px;
-      overflow: hidden;
+      grid-template-rows: 20px 1fr 15px;
+      gap: 5px;
       background: var(--paper);
     }
 
-    .title {
-      font-size: 12px;
-      line-height: 13px;
-      font-weight: 800;
-      text-transform: uppercase;
-      margin-bottom: 4px;
-      white-space: nowrap;
-    }
-
-    .muted {
-      font-size: 9px;
-      line-height: 11px;
-    }
-
-    .big {
-      font-size: 22px;
-      line-height: 24px;
-      font-weight: 900;
-      letter-spacing: 0;
-    }
-
-    .red { color: var(--red); }
-
-    .bar {
-      height: 8px;
-      border: 1px solid var(--black);
-      margin: 3px 0;
-      position: relative;
-      background: #fff;
-    }
-
-    .fill {
-      height: 100%;
-      background: var(--black);
-    }
-
-    .fill.red {
-      background: var(--red);
-    }
-
-    .metric {
-      display: flex;
-      justify-content: space-between;
-      gap: 4px;
-      font-size: 9px;
-      line-height: 11px;
-      white-space: nowrap;
-    }
-
-    .server {
-      grid-column: 3;
-      grid-row: 1 / span 2;
-    }
-
-    .weather {
-      grid-column: 1;
-      grid-row: 2;
-    }
-
-    .todos {
-      grid-column: 1 / span 2;
-      grid-row: 3;
-    }
-
-    .note {
-      grid-column: 3;
-      grid-row: 3;
-    }
-
+    .top,
     .footer {
-      grid-column: 1 / span 3;
-      grid-row: 4;
-      border-top: 2px solid var(--black);
       display: flex;
       align-items: center;
       justify-content: space-between;
-      font-size: 10px;
-      line-height: 12px;
-      padding: 2px 2px 0;
+      border-bottom: 2px solid var(--ink);
+      font-size: 9px;
+      line-height: 10px;
+      font-weight: 800;
       overflow: hidden;
+      white-space: nowrap;
+    }
+
+    .footer {
+      border-top: 2px solid var(--ink);
+      border-bottom: 0;
+      color: var(--muted);
+      font-size: 8px;
+      padding-top: 2px;
+    }
+
+    .brand,
+    .status {
+      display: flex;
+      align-items: center;
+      gap: 5px;
+      min-width: 0;
+    }
+
+    .crab {
+      width: 14px;
+      height: 11px;
+      position: relative;
+      flex: none;
+    }
+
+    .crab::before {
+      content: "";
+      position: absolute;
+      width: 2px;
+      height: 2px;
+      left: 0;
+      top: 0;
+      background: transparent;
+      box-shadow:
+        0 4px var(--red), 2px 2px var(--red), 4px 4px var(--red), 6px 4px var(--red), 8px 4px var(--red), 10px 2px var(--red), 12px 4px var(--red),
+        2px 6px var(--red), 4px 6px var(--red), 6px 6px var(--red), 8px 6px var(--red), 10px 6px var(--red),
+        0 8px var(--red), 4px 8px var(--red), 6px 8px var(--red), 8px 8px var(--red), 12px 8px var(--red);
+    }
+
+    .signal {
+      display: flex;
+      align-items: flex-end;
+      gap: 1px;
+      height: 9px;
+    }
+
+    .signal i {
+      display: block;
+      width: 2px;
+      background: var(--ink);
+    }
+
+    .battery {
+      width: 18px;
+      height: 9px;
+      border: 2px solid var(--ink);
+      padding: 1px;
+      position: relative;
+    }
+
+    .battery::after {
+      content: "";
+      position: absolute;
+      right: -4px;
+      top: 2px;
+      width: 2px;
+      height: 3px;
+      background: var(--ink);
+    }
+
+    .battery span {
+      display: block;
+      width: 80%;
+      height: 100%;
+      background: var(--ink);
+    }
+
+    .main {
+      min-height: 0;
+      display: grid;
+      grid-template-columns: 238px 143px;
+      gap: 6px;
+    }
+
+    .left,
+    .right {
+      min-width: 0;
+      min-height: 0;
+      display: grid;
+      gap: 5px;
+    }
+
+    .left {
+      grid-template-rows: 76px 76px 57px;
+    }
+
+    .right {
+      grid-template-rows: 119px 95px;
+    }
+
+    .bottom-row {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 5px;
+      min-height: 0;
+    }
+
+    .panel {
+      border: 2px solid var(--ink);
+      background: var(--card);
+      min-height: 0;
+      overflow: hidden;
+    }
+
+    .panel-title {
+      height: 14px;
+      padding: 2px 5px 0;
+      background: var(--ink);
+      color: var(--paper);
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      font-size: 8px;
+      line-height: 9px;
+      font-weight: 900;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .panel-body {
+      padding: 5px 7px;
+    }
+
+    .ai-body {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 8px;
+      padding-bottom: 0;
+    }
+
+    .label {
+      color: var(--muted);
+      font-size: 7px;
+      line-height: 8px;
+      font-weight: 800;
+      text-transform: uppercase;
+    }
+
+    .pct {
+      display: flex;
+      align-items: baseline;
+      gap: 1px;
+      margin: 1px 0 3px;
+      font-weight: 900;
+      line-height: 18px;
+      color: var(--ink);
+    }
+
+    .pct strong {
+      font-size: 21px;
+      line-height: 18px;
+    }
+
+    .pct span {
+      font-size: 10px;
+    }
+
+    .pct.red { color: var(--red); }
+
+    .bar {
+      height: 8px;
+      border: 2px solid var(--ink);
+      background: repeating-linear-gradient(90deg, var(--soft) 0 5px, transparent 5px 7px);
+      position: relative;
+    }
+
+    .fill {
+      position: absolute;
+      left: 0;
+      top: 0;
+      bottom: 0;
+      background: repeating-linear-gradient(90deg, var(--ink) 0 5px, transparent 5px 7px);
+    }
+
+    .fill.red {
+      background: repeating-linear-gradient(90deg, var(--red) 0 5px, transparent 5px 7px);
+    }
+
+    .subline {
+      margin-top: 3px;
+      display: flex;
+      justify-content: space-between;
+      gap: 3px;
+      color: var(--muted);
+      font-size: 6px;
+      line-height: 7px;
+      white-space: nowrap;
+      overflow: hidden;
+    }
+
+    .ai-meta {
+      grid-column: 1 / 3;
+      border-top: 1px dashed var(--soft);
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      gap: 4px;
+      margin-top: 4px;
+      padding-top: 4px;
+      font-size: 7px;
+      line-height: 8px;
+    }
+
+    .ai-meta b {
+      display: block;
+      font-size: 9px;
+      line-height: 10px;
+      color: var(--ink);
+      margin-top: 1px;
+    }
+
+    .ai-meta b.red { color: var(--red); }
+
+    .mini-body {
+      padding: 5px 7px;
+    }
+
+    .metric {
+      display: grid;
+      grid-template-columns: 24px 1fr 26px;
+      align-items: center;
+      gap: 4px;
+      margin-bottom: 4px;
+      font-size: 7px;
+      line-height: 8px;
+      color: var(--muted);
+    }
+
+    .metric .bar {
+      height: 7px;
+      border-width: 1px;
+    }
+
+    .metric b {
+      color: var(--ink);
+      text-align: right;
+    }
+
+    .mini-foot {
+      display: flex;
+      justify-content: space-between;
+      border-top: 1px dashed var(--soft);
+      padding-top: 4px;
+      margin-top: 3px;
+      font-size: 7px;
+      line-height: 8px;
+      color: var(--muted);
+      white-space: nowrap;
+    }
+
+    .weather-grid {
+      display: grid;
+      grid-template-columns: 42px 1fr;
+      gap: 5px;
+      align-items: center;
+    }
+
+    .temp {
+      font-size: 22px;
+      line-height: 20px;
+      font-weight: 900;
+      color: var(--red);
+    }
+
+    .temp span {
+      font-size: 10px;
+    }
+
+    .todo-list {
+      padding: 3px 6px 5px;
     }
 
     .todo {
       display: grid;
-      grid-template-columns: 12px 1fr 34px;
+      grid-template-columns: 10px 1fr 28px;
       gap: 4px;
       align-items: center;
-      font-size: 10px;
-      line-height: 12px;
-      height: 12px;
-      overflow: hidden;
+      height: 14px;
+      border-bottom: 1px dashed var(--soft);
+      font-size: 7px;
+      line-height: 8px;
+      white-space: nowrap;
     }
 
     .box {
       width: 8px;
       height: 8px;
-      border: 1px solid var(--black);
+      border: 1px solid var(--muted);
     }
 
     .box.done {
@@ -149,90 +366,260 @@
       text-overflow: ellipsis;
       white-space: nowrap;
     }
+
+    .due {
+      color: var(--muted);
+      text-align: right;
+      font-weight: 800;
+    }
+
+    .calendar-body {
+      padding: 4px 7px 5px;
+    }
+
+    .week,
+    .days {
+      display: grid;
+      grid-template-columns: repeat(7, 1fr);
+      text-align: center;
+      gap: 1px;
+    }
+
+    .week {
+      color: var(--muted);
+      font-size: 6px;
+      line-height: 8px;
+      margin-bottom: 2px;
+      font-weight: 800;
+    }
+
+    .day {
+      height: 12px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 7px;
+      line-height: 8px;
+      color: var(--ink);
+    }
+
+    .day.today {
+      background: var(--red);
+      color: var(--paper);
+      font-weight: 900;
+    }
+
+    .day.due-day {
+      border: 1px solid var(--red);
+      color: var(--red);
+      font-weight: 900;
+    }
+
+    .legend {
+      display: flex;
+      gap: 10px;
+      margin-top: 4px;
+      color: var(--muted);
+      font-size: 6px;
+      line-height: 7px;
+    }
+
+    .legend span {
+      display: flex;
+      align-items: center;
+      gap: 3px;
+    }
+
+    .swatch {
+      width: 7px;
+      height: 7px;
+      background: var(--red);
+      display: inline-block;
+    }
+
+    .swatch.outline {
+      background: transparent;
+      border: 1px solid var(--red);
+    }
+
+    .red-dot {
+      width: 5px;
+      height: 5px;
+      background: var(--red);
+      display: inline-block;
+      flex: none;
+    }
   </style>
 </head>
 <body>
-  <main class="page" id="app"></main>
+  <main class="page">
+    <header class="top">
+      <div class="brand"><span class="crab"></span><span>AI DASHBOARD</span></div>
+      <div class="status">
+        <span class="signal"><i style="height:3px"></i><i style="height:6px"></i><i style="height:9px"></i></span>
+        <span id="clock">--:--</span>
+        <span class="battery"><span></span></span>
+      </div>
+    </header>
+
+    <section class="main">
+      <div class="left">
+        <section class="panel" id="claude"></section>
+        <section class="panel" id="codex"></section>
+        <section class="bottom-row">
+          <div class="panel" id="server"></div>
+          <div class="panel" id="weather"></div>
+        </section>
+      </div>
+      <div class="right">
+        <section class="panel" id="todos"></section>
+        <section class="panel" id="calendar"></section>
+      </div>
+    </section>
+
+    <footer class="footer">
+      <span>&gt; LAST UPDATE <b id="updated">--</b></span>
+      <span><i class="red-dot"></i> AUTO-REFRESH 5MIN</span>
+      <span>v1.0.0</span>
+    </footer>
+  </main>
+
   <script>
     const data = __DASHBOARD_JSON__;
-    const pct = (value) => Math.max(0, Math.min(100, Number(value || 0)));
-    const text = (value, fallback = "") => (value === undefined || value === null || value === "") ? fallback : String(value);
+    const clamp = (v) => Math.max(0, Math.min(100, Number(v || 0)));
+    const txt = (v, fallback = "") => (v === undefined || v === null || v === "") ? fallback : String(v);
 
-    function aiPanel(name, block, accent) {
-      const daily = pct(block.daily_percent);
-      const weekly = pct(block.weekly_percent);
-      return `
-        <section class="panel">
-          <div class="title ${accent ? "red" : ""}">${name}</div>
-          <div class="metric"><span>Daily</span><strong>${daily}%</strong></div>
-          <div class="bar"><div class="fill ${accent ? "red" : ""}" style="width:${daily}%"></div></div>
-          <div class="metric"><span>Weekly</span><strong>${weekly}%</strong></div>
-          <div class="bar"><div class="fill" style="width:${weekly}%"></div></div>
-          <div class="muted">${text(block.model)} · ${text(block.daily_reset)}</div>
-        </section>`;
+    function safeDate() {
+      const raw = txt(data.updated_at);
+      const parsed = raw ? new Date(raw.replace(" ", "T")) : new Date();
+      return Number.isNaN(parsed.getTime()) ? new Date() : parsed;
     }
 
-    function serverPanel(server) {
+    function monthTitle(date) {
+      return date.toLocaleString("en-US", { month: "short", year: "numeric" }).toUpperCase();
+    }
+
+    function mmdd(date) {
+      return String(date.getMonth() + 1).padStart(2, "0") + "-" + String(date.getDate()).padStart(2, "0");
+    }
+
+    function aiPanel(root, name, block, redDaily) {
+      const daily = clamp(block.daily_percent);
+      const weekly = clamp(block.weekly_percent);
+      root.innerHTML = `
+        <div class="panel-title"><span>${name}</span><span>[ PRO ]</span></div>
+        <div class="panel-body ai-body">
+          ${usageBlock("Daily", daily, block.daily_reset, redDaily)}
+          ${usageBlock("Weekly", weekly, block.weekly_reset, false)}
+          <div class="ai-meta">
+            <span><em class="label">Model</em><b class="${redDaily ? "red" : ""}">${txt(block.model, "--")}</b></span>
+            <span><em class="label">Used</em><b>${txt(block.used_today, "--")}</b></span>
+            <span><em class="label">Requests</em><b>${txt(block.requests_today, "0")}</b></span>
+          </div>
+        </div>`;
+    }
+
+    function usageBlock(label, value, reset, accent) {
       return `
-        <section class="panel server">
-          <div class="title">Server</div>
-          <div class="big ${server.online ? "" : "red"}">${server.online ? "ONLINE" : "DOWN"}</div>
-          ${metric("CPU", server.cpu)}
-          ${metric("RAM", server.ram)}
-          ${metric("Disk", server.disk)}
-          <div class="muted">Load ${text(server.load_avg)} · Up ${text(server.uptime)}</div>
-        </section>`;
+        <div>
+          <div class="label">${label}</div>
+          <div class="pct ${accent ? "red" : ""}"><strong>${value}</strong><span>%</span></div>
+          <div class="bar"><div class="fill ${accent ? "red" : ""}" style="width:${value}%"></div></div>
+          <div class="subline"><span>RESETS ${txt(reset, "--").toUpperCase()}</span></div>
+        </div>`;
     }
 
     function metric(label, value) {
-      const safe = pct(value);
+      const pct = clamp(value);
       return `
-        <div class="metric"><span>${label}</span><strong>${safe}%</strong></div>
-        <div class="bar"><div class="fill" style="width:${safe}%"></div></div>`;
+        <div class="metric">
+          <span>${label}</span>
+          <div class="bar"><div class="fill" style="width:${pct}%"></div></div>
+          <b>${pct}%</b>
+        </div>`;
     }
 
-    function weatherPanel(weather) {
-      return `
-        <section class="panel weather">
-          <div class="title">Weather</div>
-          <div class="big">${Math.round(Number(weather.temperature || 0))}°</div>
-          <div class="metric"><span>Humidity</span><strong>${text(weather.humidity)}%</strong></div>
-          <div class="metric"><span>Wind</span><strong>${text(weather.wind_speed)}</strong></div>
-          <div class="muted">${text(weather.condition)} · ${text(weather.wind)}</div>
-        </section>`;
+    function renderServer(root, server) {
+      root.innerHTML = `
+        <div class="panel-title"><span>Server Status</span><span>${server.online ? "ONLINE" : "DOWN"} <i class="red-dot"></i></span></div>
+        <div class="mini-body">
+          ${metric("CPU", server.cpu)}
+          ${metric("RAM", server.ram)}
+          ${metric("DISK", server.disk)}
+          <div class="mini-foot"><span>LOAD ${txt(server.load_avg, "--")}</span><span>UP ${txt(server.uptime, "--").toUpperCase()}</span></div>
+        </div>`;
     }
 
-    function todosPanel(items) {
-      const rows = (items || []).slice(0, 6).map((item) => `
+    function renderWeather(root, weather) {
+      const points = makeTrend(weather.temperature);
+      root.innerHTML = `
+        <div class="panel-title"><span>Weather</span><span>${txt(weather.condition, "N/A").toUpperCase()}</span></div>
+        <div class="mini-body">
+          <div class="weather-grid">
+            <div><div class="temp">${Math.round(Number(weather.temperature || 0))}<span>°C</span></div><div class="label">HUM ${txt(weather.humidity, "--")}%</div></div>
+            <svg width="50" height="25" viewBox="0 0 50 25" shape-rendering="crispEdges"><polyline points="${points}" fill="none" stroke="#b5573a" stroke-width="2"/></svg>
+          </div>
+          <div class="mini-foot"><span>WIND ${txt(weather.wind, "--")}</span><span>${txt(weather.wind_speed, "--")}</span></div>
+        </div>`;
+    }
+
+    function makeTrend(temp) {
+      const base = Number(temp || 26);
+      const values = [base - 2, base - 1, base - 3, base, base + 1, base - 1, base + 2];
+      const min = Math.min(...values);
+      const max = Math.max(...values);
+      return values.map((v, i) => {
+        const x = i * (50 / (values.length - 1));
+        const y = 3 + (1 - (v - min) / Math.max(1, max - min)) * 19;
+        return `${x.toFixed(0)},${y.toFixed(0)}`;
+      }).join(" ");
+    }
+
+    function renderTodos(root, items) {
+      const rows = (items || []).slice(0, 7).map((item) => `
         <div class="todo">
           <span class="box ${item.done ? "done" : ""}"></span>
-          <span class="truncate">${text(item.text)}</span>
-          <strong>${text(item.due)}</strong>
+          <span class="truncate">${txt(item.text)}</span>
+          <span class="due">${txt(item.due)}</span>
         </div>`).join("");
-      return `
-        <section class="panel todos">
-          <div class="title">To-Do</div>
-          ${rows}
-        </section>`;
+      const done = (items || []).filter((item) => item.done).length;
+      root.innerHTML = `
+        <div class="panel-title"><span>To-Do</span><span>${done}/${(items || []).length || 0}</span></div>
+        <div class="todo-list">${rows}</div>`;
     }
 
-    function notePanel(note) {
-      return `
-        <section class="panel note">
-          <div class="title red">Note</div>
-          <div class="muted">${text(note, "No note").slice(0, 80)}</div>
-        </section>`;
+    function renderCalendar(root, date, items) {
+      const dueDays = new Set((items || []).map((item) => txt(item.due)).filter(Boolean));
+      const first = new Date(date.getFullYear(), date.getMonth(), 1);
+      const last = new Date(date.getFullYear(), date.getMonth() + 1, 0);
+      const blanks = first.getDay();
+      const cells = [];
+      for (let i = 0; i < blanks; i++) cells.push(`<div class="day"></div>`);
+      for (let day = 1; day <= last.getDate(); day++) {
+        const d = new Date(date.getFullYear(), date.getMonth(), day);
+        const key = mmdd(d);
+        const cls = key === mmdd(date) ? "today" : dueDays.has(key) ? "due-day" : "";
+        cells.push(`<div class="day ${cls}">${day}</div>`);
+      }
+      root.innerHTML = `
+        <div class="panel-title"><span>Calendar</span><span>${monthTitle(date)}</span></div>
+        <div class="calendar-body">
+          <div class="week"><span>S</span><span>M</span><span>T</span><span>W</span><span>T</span><span>F</span><span>S</span></div>
+          <div class="days">${cells.join("")}</div>
+          <div class="legend"><span><i class="swatch"></i>TODAY</span><span><i class="swatch outline"></i>DUE</span></div>
+        </div>`;
     }
 
-    document.getElementById("app").innerHTML = [
-      aiPanel("Claude", data.claude || {}, true),
-      aiPanel("Codex", data.codex || {}, false),
-      serverPanel(data.server || {}),
-      weatherPanel(data.weather || {}),
-      todosPanel(data.todos || data.todo_items || []),
-      notePanel(data.note),
-      `<footer class="footer"><strong>AI Dashboard</strong><span>${text(data.updated_at)}</span></footer>`
-    ].join("");
+    const now = safeDate();
+    document.getElementById("clock").textContent = now.toTimeString().slice(0, 5);
+    document.getElementById("updated").textContent = txt(data.updated_at).slice(5);
+    aiPanel(document.getElementById("claude"), "Claude", data.claude || {}, true);
+    aiPanel(document.getElementById("codex"), "Codex", data.codex || {}, false);
+    renderServer(document.getElementById("server"), data.server || {});
+    renderWeather(document.getElementById("weather"), data.weather || {});
+    const todoItems = data.todos || data.todo_items || [];
+    renderTodos(document.getElementById("todos"), todoItems);
+    renderCalendar(document.getElementById("calendar"), now, todoItems);
   </script>
 </body>
 </html>
