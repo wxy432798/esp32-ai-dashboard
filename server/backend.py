@@ -8,7 +8,7 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from providers.ai_usage import get_ai_usage
+from providers.ai_usage import get_ai_usage, save_ai_usage
 from renderer import ensure_rendered_frame
 from providers.system_metrics import get_server_status
 from providers.weather import get_weather
@@ -75,6 +75,7 @@ def dashboard_payload(refresh_interval_sec=DEFAULT_REFRESH_SEC):
 class Handler(BaseHTTPRequestHandler):
     refresh_interval_sec = DEFAULT_REFRESH_SEC
     esp32_api_key = ""
+    admin_api_key = ""
 
     def _authorized(self):
         if not self.esp32_api_key:
@@ -84,6 +85,15 @@ class Handler(BaseHTTPRequestHandler):
         if auth.lower().startswith("bearer "):
             key = auth[7:]
         return key.strip() == self.esp32_api_key
+
+    def _admin_authorized(self):
+        if not self.admin_api_key:
+            return False
+        auth = self.headers.get("authorization") or ""
+        key = self.headers.get("x-api-key") or ""
+        if auth.lower().startswith("bearer "):
+            key = auth[7:]
+        return key.strip() == self.admin_api_key
 
     def _json(self, status, body):
         raw = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -176,6 +186,24 @@ class Handler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         try:
             data = self._read_json()
+            if path == "/api/usage":
+                if not self._admin_authorized():
+                    self._json(401, {"error": "missing or invalid admin api key"})
+                    return
+                saved = {}
+                if "claude" in data:
+                    saved["claude"] = save_ai_usage("claude", data["claude"])
+                if "codex" in data:
+                    saved["codex"] = save_ai_usage("codex", data["codex"])
+                if not saved:
+                    agent = str(data.get("agent") or "").strip().lower()
+                    usage = data.get("usage")
+                    if agent not in ("claude", "codex"):
+                        self._json(400, {"error": "expected claude/codex block or agent"})
+                        return
+                    saved[agent] = save_ai_usage(agent, usage)
+                self._json(200, {"ok": True, "usage": saved})
+                return
             if path == "/api/todo":
                 action = data.get("action")
                 if action == "add":
@@ -212,6 +240,7 @@ def main():
 
     Handler.refresh_interval_sec = args.refresh
     Handler.esp32_api_key = os.environ.get("ESP32_API_KEY", "").strip()
+    Handler.admin_api_key = os.environ.get("ADMIN_API_KEY", "").strip()
     server = DashboardHTTPServer((args.host, args.port), Handler)
     print(f"E-ink dashboard backend: http://{args.host}:{args.port}/api/eink-dashboard")
     server.serve_forever()

@@ -65,6 +65,42 @@ python3 server/backend.py --host 0.0.0.0 --port 8787 --refresh 300
 The backend already returns real Linux server metrics and mock/provider-based
 Claude, Codex and weather data. See `docs/BACKEND.md`.
 
+## Personal Subscription Usage
+
+Personal Claude/ChatGPT/Codex subscriptions do not provide a stable admin
+usage API for this kind of dashboard. For personal accounts, report the values
+you want to display into the server:
+
+```bash
+curl -X POST "http://127.0.0.1:8787/api/usage" \
+  -H "Content-Type: application/json" \
+  -H "X-API-Key: $ADMIN_API_KEY" \
+  -d '{
+    "claude": {
+      "daily_percent": 0,
+      "weekly_percent": 0,
+      "daily_reset": "N/A",
+      "weekly_reset": "N/A",
+      "model": "Claude",
+      "requests_today": 0,
+      "used_today": "personal"
+    },
+    "codex": {
+      "daily_percent": 0,
+      "weekly_percent": 0,
+      "daily_reset": "N/A",
+      "weekly_reset": "N/A",
+      "model": "Codex",
+      "requests_today": 0,
+      "used_today": "personal"
+    }
+  }'
+```
+
+The backend stores these values in `data/state/usage/claude.json` and
+`data/state/usage/codex.json`. If no reported value exists, it falls back to
+`data/mock/dashboard.json`.
+
 ## Firmware
 
 1. Copy config:
