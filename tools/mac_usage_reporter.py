@@ -7,8 +7,10 @@ import os
 import re
 import select
 import shutil
+import ssl
 import subprocess
 import sys
+import tempfile
 import time
 import urllib.error
 import urllib.request
@@ -22,7 +24,10 @@ DEFAULT_SOURCE = Path.home() / ".esp32-dashboard-usage.json"
 DEFAULT_KEY_FILE = Path.home() / ".esp32-dashboard-admin-key"
 CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 CLAUDE_KEYCHAIN_SERVICE = "Claude Code-credentials"
+CLAUDE_SAFE_STORAGE_SERVICE = "Claude Safe Storage"
+CLAUDE_SAFE_STORAGE_ACCOUNT = "Claude Key"
 CLAUDE_DEFAULT_CONFIG_DIR = Path.home() / ".claude"
+CLAUDE_DESKTOP_CONFIG = Path.home() / "Library" / "Application Support" / "Claude" / "config.json"
 CLAUDE_PROBE_MODEL = "claude-haiku-4-5-20251001"
 CODEX_AUTH_FILE = Path.home() / ".codex" / "auth.json"
 CODEX_RESET_CREDITS_URL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
@@ -72,10 +77,17 @@ def _extract_claude_access_token(blob: str) -> str:
     if isinstance(data, dict):
         if isinstance(data.get("accessToken"), str):
             return data["accessToken"]
+        if isinstance(data.get("token"), str):
+            return data["token"]
         for value in data.values():
             if isinstance(value, dict) and isinstance(value.get("accessToken"), str):
                 return value["accessToken"]
+            if isinstance(value, dict) and isinstance(value.get("token"), str):
+                return value["token"]
     match = re.search(r'"accessToken"\s*:\s*"([^"]+)"', blob)
+    if match:
+        return match.group(1)
+    match = re.search(r'"token"\s*:\s*"([^"]+)"', blob)
     if match:
         return match.group(1)
     if re.fullmatch(r"[A-Za-z0-9_\-.~+/=]{20,}", blob):
@@ -105,6 +117,93 @@ def _read_claude_keychain_token() -> str:
     return _extract_claude_access_token(result.stdout)
 
 
+def _read_keychain_password(service: str, account: str) -> bytes:
+    try:
+        result = subprocess.run(
+            ["security", "find-generic-password", "-s", service, "-a", account, "-w"],
+            check=True,
+            capture_output=True,
+            timeout=20,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return b""
+    return result.stdout.rstrip(b"\n")
+
+
+def _decrypt_chromium_v10(ciphertext_b64: str, password: bytes) -> bytes:
+    raw = base64.b64decode(ciphertext_b64)
+    if not raw.startswith(b"v10"):
+        return b""
+    key = __import__("hashlib").pbkdf2_hmac("sha1", password, b"saltysalt", 1003, 16)
+    iv = b" " * 16
+    with tempfile.NamedTemporaryFile(delete=False) as tmp:
+        tmp.write(raw[3:])
+        tmp_path = tmp.name
+    try:
+        return subprocess.check_output(
+            [
+                "openssl",
+                "enc",
+                "-d",
+                "-aes-128-cbc",
+                "-K",
+                key.hex(),
+                "-iv",
+                iv.hex(),
+                "-in",
+                tmp_path,
+            ],
+            stderr=subprocess.DEVNULL,
+            timeout=10,
+        )
+    except (subprocess.CalledProcessError, FileNotFoundError, subprocess.TimeoutExpired):
+        return b""
+    finally:
+        try:
+            Path(tmp_path).unlink()
+        except OSError:
+            pass
+
+
+def _find_token_in_json(data: Any) -> str:
+    if isinstance(data, dict):
+        for key in ("accessToken", "access_token", "token"):
+            value = data.get(key)
+            if isinstance(value, str) and value:
+                return value
+        for value in data.values():
+            token = _find_token_in_json(value)
+            if token:
+                return token
+    elif isinstance(data, list):
+        for value in data:
+            token = _find_token_in_json(value)
+            if token:
+                return token
+    return ""
+
+
+def _read_claude_desktop_token() -> str:
+    try:
+        config = json.loads(CLAUDE_DESKTOP_CONFIG.read_text(encoding="utf-8"))
+    except (OSError, json.JSONDecodeError):
+        return ""
+    token_cache = config.get("oauth:tokenCache")
+    if not isinstance(token_cache, str) or not token_cache:
+        return ""
+    password = _read_keychain_password(CLAUDE_SAFE_STORAGE_SERVICE, CLAUDE_SAFE_STORAGE_ACCOUNT)
+    if not password:
+        return ""
+    decrypted = _decrypt_chromium_v10(token_cache, password)
+    if not decrypted:
+        return ""
+    try:
+        parsed = json.loads(decrypted.decode("utf-8"))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        return ""
+    return _find_token_in_json(parsed)
+
+
 def _read_claude_file_token(config_dir: Path = CLAUDE_DEFAULT_CONFIG_DIR) -> str:
     credentials = config_dir.expanduser() / ".credentials.json"
     try:
@@ -120,6 +219,9 @@ def _read_claude_token() -> str:
         if token:
             return token
     token = _read_claude_file_token()
+    if token:
+        return token
+    token = _read_claude_desktop_token()
     if token:
         return token
     if sys.platform == "darwin":
@@ -177,7 +279,13 @@ def _fetch_claude_usage(timeout: int) -> dict[str, Any] | None:
         },
     )
     try:
-        with urllib.request.urlopen(request, timeout=timeout) as response:
+        context = ssl.create_default_context()
+        try:
+            import certifi  # type: ignore
+            context = ssl.create_default_context(cafile=certifi.where())
+        except ImportError:
+            pass
+        with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
             headers = response.headers
     except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError):
         return None
