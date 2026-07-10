@@ -8,6 +8,12 @@ PLIST="${HOME}/Library/LaunchAgents/com.esp32-dashboard.usage-reporter.plist"
 LOG_DIR="${HOME}/Library/Logs/esp32-dashboard"
 SOURCE="${HOME}/.esp32-dashboard-usage.json"
 KEY_FILE="${HOME}/.esp32-dashboard-admin-key"
+PYTHON_BIN="${PYTHON_BIN:-$(command -v python3)}"
+
+if [[ -z "${PYTHON_BIN}" || ! -x "${PYTHON_BIN}" ]]; then
+  echo "missing python3; set PYTHON_BIN=/path/to/python3" >&2
+  exit 2
+fi
 
 if [[ ! -s "${SOURCE}" ]]; then
   echo "missing ${SOURCE}; run: python3 ${SCRIPT} --init" >&2
@@ -31,7 +37,7 @@ cat > "${PLIST}" <<EOF
   <string>com.esp32-dashboard.usage-reporter</string>
   <key>ProgramArguments</key>
   <array>
-    <string>/usr/bin/python3</string>
+    <string>${PYTHON_BIN}</string>
     <string>${SCRIPT}</string>
   </array>
   <key>StartInterval</key>
@@ -51,4 +57,5 @@ launchctl load "${PLIST}"
 
 echo "installed: ${PLIST}"
 echo "interval: ${INTERVAL_SECONDS}s"
+echo "python: ${PYTHON_BIN}"
 echo "logs: ${LOG_DIR}/usage-reporter.out.log"
