@@ -39,7 +39,7 @@
       overflow: hidden;
       background: var(--paper);
       color: var(--ink);
-      font-family: "Pixelify Sans", "Noto Sans Mono", monospace;
+      font-family: "Pixelify Sans", "Noto Sans CJK SC", "DejaVu Sans Mono", monospace;
       letter-spacing: 0;
     }
 
@@ -198,6 +198,7 @@
       font-size: 8px;
       line-height: 9px;
       font-weight: 900;
+      letter-spacing: .04em;
       text-transform: uppercase;
       white-space: nowrap;
     }
@@ -232,7 +233,7 @@
     }
 
     .pct strong {
-      font-size: 21px;
+      font-size: 22px;
       line-height: 18px;
     }
 
@@ -261,6 +262,19 @@
       background: repeating-linear-gradient(90deg, var(--red) 0 5px, transparent 5px 7px);
     }
 
+    .ai-body .bar {
+      height: 9px;
+      background: repeating-linear-gradient(90deg, var(--soft) 0 7px, transparent 7px 9px);
+    }
+
+    .ai-body .fill {
+      background: repeating-linear-gradient(90deg, var(--ink) 0 7px, transparent 7px 9px);
+    }
+
+    .ai-body .fill.red {
+      background: repeating-linear-gradient(90deg, var(--red) 0 7px, transparent 7px 9px);
+    }
+
     .subline {
       margin-top: 3px;
       display: flex;
@@ -275,7 +289,7 @@
 
     .ai-meta {
       grid-column: 1 / 3;
-      border-top: 1px dashed var(--soft);
+      border-top: 2px dashed var(--soft);
       display: grid;
       grid-template-columns: 1fr 1fr 1fr;
       gap: 4px;
@@ -367,9 +381,16 @@
     }
 
     .box {
-      width: 8px;
-      height: 8px;
+      width: 9px;
+      height: 9px;
       border: 1px solid var(--muted);
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 7px;
+      line-height: 1;
+      font-weight: 700;
+      color: var(--paper);
     }
 
     .box.done {
@@ -600,7 +621,7 @@
       const safeItems = items || [];
       const rows = safeItems.length ? safeItems.slice(0, 7).map((item) => `
         <div class="todo">
-          <span class="box ${item.done ? "done" : ""}"></span>
+          <span class="box ${item.done ? "done" : ""}">${item.done ? "&times;" : ""}</span>
           <span class="truncate">${txt(item.text)}</span>
           <span class="due">${txt(item.due)}</span>
         </div>`).join("") : `<div class="todo"><span></span><span class="truncate">N/A</span><span class="due"></span></div>`;
