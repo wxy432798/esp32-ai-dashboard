@@ -9,7 +9,7 @@ static const uint16_t RED = GxEPD_RED;
 
 void DashboardUI::begin() {
   display_.init(115200, true, 2, false);
-  display_.setRotation(1);
+  display_.setRotation(0);
   display_.hibernate();
 }
 
