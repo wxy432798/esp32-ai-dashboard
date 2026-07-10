@@ -6,6 +6,7 @@ import hashlib
 import hmac
 import json
 import os
+import struct
 import sys
 import urllib.error
 import urllib.request
@@ -94,6 +95,22 @@ def _load_env_file(path: Path) -> None:
         os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
 
 
+def _frame_info(frame: bytes) -> dict[str, Any]:
+    header_len = 26
+    if len(frame) < header_len or frame[:8] != b"EINK3C01":
+        raise ValueError("invalid e-ink frame header")
+    width, height, _reserved, black_len, red_len, crc32 = struct.unpack("<HHHIII", frame[8:26])
+    expected = header_len + black_len + red_len
+    if expected != len(frame):
+        raise ValueError(f"bad frame length {len(frame)} != {expected}")
+    return {
+        "width": width,
+        "height": height,
+        "crc32": f"{crc32:08x}",
+        "bytes": len(frame),
+    }
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Publish rendered ESP32 e-ink frame files to Aliyun OSS.")
     parser.add_argument("--source", default=DEFAULT_SOURCE, help="render source base URL")
@@ -128,12 +145,14 @@ def main() -> int:
     manifest = json.loads(_fetch(args.source, "/render/manifest.json", args.timeout).decode("utf-8"))
     frame = _fetch(args.source, manifest.get("url") or "/render/eink.bin", args.timeout)
     png = _fetch(args.source, manifest.get("png_url") or "/render/eink.png", args.timeout)
+    frame_info = _frame_info(frame)
 
     prefix = args.prefix.strip("/")
     public_manifest: dict[str, Any] = dict(manifest)
     public_manifest["url"] = f"/{prefix}/eink.bin"
     public_manifest["png_url"] = f"/{prefix}/eink.png"
     public_manifest["oss_endpoint"] = endpoint
+    public_manifest.update(frame_info)
     manifest_bytes = json.dumps(public_manifest, ensure_ascii=False, separators=(",", ":")).encode("utf-8")
 
     public_read = not args.no_public_read
