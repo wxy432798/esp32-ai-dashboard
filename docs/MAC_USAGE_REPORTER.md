@@ -1,8 +1,14 @@
 # Mac Usage Reporter
 
 Personal Claude/Codex subscriptions do not expose a stable official usage API
-for this dashboard. The Mac reporter solves that by sending a small local JSON
-state file to the server's `POST /api/usage` endpoint.
+for this dashboard. The Mac reporter solves that with two layers:
+
+- Claude: by default, it tries the Clawdmeter-style probe. It reads the Claude
+  Code OAuth token from `~/.claude/.credentials.json` or macOS Keychain service
+  `Claude Code-credentials`, sends a 1-token Haiku request, and maps Anthropic
+  rate-limit headers into the dashboard.
+- Fallback/manual: it reads `~/.esp32-dashboard-usage.json` and sends that to
+  the server's `POST /api/usage` endpoint.
 
 ## One-Time Setup
 
@@ -64,6 +70,30 @@ The second command should return:
 
 ```json
 {"ok": true}
+```
+
+To skip the Claude API probe and only send the local JSON file:
+
+```bash
+python3 tools/mac_usage_reporter.py --no-auto-claude
+```
+
+Claude fields map as:
+
+```text
+daily_percent  = anthropic-ratelimit-unified-5h-utilization
+daily_reset    = anthropic-ratelimit-unified-5h-reset
+weekly_percent = anthropic-ratelimit-unified-7d-utilization
+weekly_reset   = anthropic-ratelimit-unified-7d-reset
+status         = anthropic-ratelimit-unified-5h-status
+```
+
+The request is intentionally tiny:
+
+```text
+POST https://api.anthropic.com/v1/messages
+model: claude-haiku-4-5-20251001
+max_tokens: 1
 ```
 
 ## Install 5-Minute Timer
