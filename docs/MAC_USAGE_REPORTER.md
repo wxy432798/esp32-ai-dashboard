@@ -7,6 +7,10 @@ for this dashboard. The Mac reporter solves that with two layers:
   Code OAuth token from `~/.claude/.credentials.json` or macOS Keychain service
   `Claude Code-credentials`, sends a 1-token Haiku request, and maps Anthropic
   rate-limit headers into the dashboard.
+- Codex: by default, it tries the Token Monitor-style local RPC probe first. It
+  runs `codex app-server --stdio`, calls `account/rateLimits/read`, and maps the
+  5-hour / weekly Codex windows into the dashboard. If RPC is unavailable, it
+  falls back to the reset-credit endpoint using `~/.codex/auth.json`.
 - Fallback/manual: it reads `~/.esp32-dashboard-usage.json` and sends that to
   the server's `POST /api/usage` endpoint.
 
@@ -75,7 +79,7 @@ The second command should return:
 To skip the Claude API probe and only send the local JSON file:
 
 ```bash
-python3 tools/mac_usage_reporter.py --no-auto-claude
+python3 tools/mac_usage_reporter.py --no-auto-claude --no-auto-codex
 ```
 
 Claude fields map as:
@@ -95,6 +99,26 @@ POST https://api.anthropic.com/v1/messages
 model: claude-haiku-4-5-20251001
 max_tokens: 1
 ```
+
+Codex fields map as:
+
+```text
+daily_percent  = account/rateLimits/read primary.usedPercent
+daily_reset    = account/rateLimits/read primary.resetsAt
+weekly_percent = account/rateLimits/read secondary.usedPercent
+weekly_reset   = account/rateLimits/read secondary.resetsAt
+source         = codex-app-server-rpc
+```
+
+Codex fallback request:
+
+```text
+GET https://chatgpt.com/backend-api/wham/rate-limit-reset-credits
+auth: ~/.codex/auth.json OAuth access token
+```
+
+When an enabled auto probe fails, the reporter skips that provider instead of
+posting template `0` values over the last good server value.
 
 ## Install 5-Minute Timer
 

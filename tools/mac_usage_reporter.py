@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 import argparse
+import base64
 import getpass
 import json
 import os
 import re
+import select
+import shutil
 import subprocess
 import sys
 import time
@@ -21,6 +24,9 @@ CLAUDE_API_URL = "https://api.anthropic.com/v1/messages"
 CLAUDE_KEYCHAIN_SERVICE = "Claude Code-credentials"
 CLAUDE_DEFAULT_CONFIG_DIR = Path.home() / ".claude"
 CLAUDE_PROBE_MODEL = "claude-haiku-4-5-20251001"
+CODEX_AUTH_FILE = Path.home() / ".codex" / "auth.json"
+CODEX_RESET_CREDITS_URL = "https://chatgpt.com/backend-api/wham/rate-limit-reset-credits"
+CODEX_APP_BUNDLE_CLI = "/Applications/Codex.app/Contents/Resources/codex"
 
 
 TEMPLATE = {
@@ -208,6 +214,269 @@ def _fetch_claude_usage(timeout: int) -> dict[str, Any] | None:
     }
 
 
+def _jwt_payload(token: str) -> dict[str, Any]:
+    parts = str(token or "").split(".")
+    if len(parts) < 2:
+        return {}
+    try:
+        payload = parts[1] + "=" * (-len(parts[1]) % 4)
+        data = base64.urlsafe_b64decode(payload.encode("ascii"))
+        parsed = json.loads(data.decode("utf-8"))
+        return parsed if isinstance(parsed, dict) else {}
+    except (ValueError, json.JSONDecodeError):
+        return {}
+
+
+def _read_codex_auth() -> dict[str, Any]:
+    path = Path(os.environ.get("CODEX_AUTH_FILE", str(CODEX_AUTH_FILE))).expanduser()
+    try:
+        data = json.loads(path.read_text(encoding="utf-8"))
+        return data if isinstance(data, dict) else {}
+    except (OSError, json.JSONDecodeError):
+        return {}
+
+
+def _codex_tokens(auth: dict[str, Any]) -> dict[str, str]:
+    tokens = auth.get("tokens") if isinstance(auth.get("tokens"), dict) else auth
+    return {
+        "access_token": str(tokens.get("access_token") or auth.get("access_token") or "").strip(),
+        "id_token": str(tokens.get("id_token") or auth.get("id_token") or "").strip(),
+    }
+
+
+def _codex_account_id(id_token: str) -> str:
+    payload = _jwt_payload(id_token)
+    nested = payload.get("https://api.openai.com/auth") or payload.get("https://api.openai.com/profile") or {}
+    if not isinstance(nested, dict):
+        nested = {}
+    return str(
+        payload.get("chatgpt_account_id")
+        or nested.get("chatgpt_account_id")
+        or payload.get("sub")
+        or ""
+    ).strip()
+
+
+def _parse_codex_reset_credits(data: dict[str, Any]) -> tuple[int, list[str]]:
+    available = data.get("available_count", data.get("availableCount", 0))
+    try:
+        available_count = max(0, int(float(available)))
+    except (TypeError, ValueError):
+        available_count = 0
+
+    now = time.time()
+    expirations = []
+    credits = data.get("credits") if isinstance(data.get("credits"), list) else []
+    for credit in credits:
+        if not isinstance(credit, dict):
+            continue
+        if str(credit.get("status", "")).lower() != "available":
+            continue
+        expires_at = credit.get("expires_at", credit.get("expiresAt"))
+        try:
+            expires_ts = datetime.fromisoformat(str(expires_at).replace("Z", "+00:00")).timestamp()
+        except (TypeError, ValueError):
+            continue
+        if expires_ts > now:
+            expirations.append(datetime.fromtimestamp(expires_ts, timezone.utc).isoformat(timespec="seconds"))
+    expirations.sort()
+    return available_count, expirations
+
+
+def _fetch_codex_usage(timeout: int) -> dict[str, Any] | None:
+    rpc_usage = _fetch_codex_rpc_usage(timeout)
+    if rpc_usage:
+        return rpc_usage
+    reset_credits = _fetch_codex_reset_credits(min(timeout, 4))
+    if reset_credits:
+        available_count = int(reset_credits.get("available_count") or 0)
+        next_expires_at = reset_credits.get("next_expires_at")
+        next_minutes = 0
+        if next_expires_at:
+            try:
+                next_minutes = _minutes_until_epoch(str(datetime.fromisoformat(next_expires_at).timestamp()))
+            except ValueError:
+                next_minutes = 0
+        return {
+            "daily_percent": 0,
+            "weekly_percent": 0,
+            "daily_reset": _format_minutes(next_minutes) if next_expires_at else "N/A",
+            "weekly_reset": "N/A",
+            "model": "Codex",
+            "requests_today": available_count,
+            "used_today": f"{available_count} resets",
+            "status": "credits",
+            "reset_credits": reset_credits,
+            "source": "codex-reset-credits",
+            "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        }
+    return None
+
+
+def _codex_command() -> str:
+    explicit = os.environ.get("CODEX_COMMAND", "").strip()
+    if explicit:
+        return explicit
+    bundled = Path(CODEX_APP_BUNDLE_CLI)
+    if bundled.exists():
+        return str(bundled)
+    return shutil.which("codex") or "codex"
+
+
+def _read_codex_rpc(timeout: int) -> tuple[dict[str, Any] | None, dict[str, Any] | None]:
+    command = _codex_command()
+    deadline = time.time() + max(3, timeout)
+    process = subprocess.Popen(
+        [command, "app-server", "--stdio"],
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        stderr=subprocess.DEVNULL,
+        text=True,
+        bufsize=1,
+    )
+
+    def send(message: dict[str, Any]) -> None:
+        if process.stdin is None:
+            return
+        process.stdin.write(json.dumps(message) + "\n")
+        process.stdin.flush()
+
+    rate_limits = None
+    account = None
+    try:
+        send({
+            "id": 1,
+            "method": "initialize",
+            "params": {"clientInfo": {"name": "esp32-dashboard", "title": "ESP32 Dashboard", "version": "0.1"}},
+        })
+        send({"method": "initialized", "params": {}})
+        send({"id": 2, "method": "account/rateLimits/read", "params": {}})
+        send({"id": 3, "method": "account/read", "params": {}})
+
+        while time.time() < deadline and (rate_limits is None or account is None):
+            if process.stdout is None:
+                break
+            ready, _, _ = select.select([process.stdout], [], [], 0.25)
+            if not ready:
+                if process.poll() is not None:
+                    break
+                continue
+            line = process.stdout.readline()
+            if not line:
+                continue
+            try:
+                message = json.loads(line)
+            except json.JSONDecodeError:
+                continue
+            if message.get("id") == 2:
+                rate_limits = message.get("result") if isinstance(message.get("result"), dict) else {}
+            elif message.get("id") == 3:
+                result = message.get("result") if isinstance(message.get("result"), dict) else {}
+                account = result.get("account") if isinstance(result.get("account"), dict) else {}
+        return rate_limits, account
+    except (OSError, BrokenPipeError):
+        return None, None
+    finally:
+        try:
+            process.terminate()
+            process.wait(timeout=1)
+        except Exception:
+            try:
+                process.kill()
+            except Exception:
+                pass
+
+
+def _rate_limits_snapshot(result: dict[str, Any]) -> dict[str, Any]:
+    direct = result.get("rateLimits") if isinstance(result.get("rateLimits"), dict) else {}
+    by_id = result.get("rateLimitsByLimitId") if isinstance(result.get("rateLimitsByLimitId"), dict) else {}
+    codex = by_id.get("codex") if isinstance(by_id.get("codex"), dict) else {}
+    if direct.get("primary") or direct.get("secondary"):
+        return direct
+    return codex
+
+
+def _reset_from_epoch(value: Any) -> str:
+    try:
+        raw = float(value)
+    except (TypeError, ValueError):
+        return "N/A"
+    if raw > 20_000_000_000:
+        raw = raw / 1000.0
+    return _format_minutes(_minutes_until_epoch(str(raw)))
+
+
+def _fetch_codex_rpc_usage(timeout: int) -> dict[str, Any] | None:
+    result, account = _read_codex_rpc(timeout)
+    if not result:
+        return None
+    snapshot = _rate_limits_snapshot(result)
+    primary = snapshot.get("primary") if isinstance(snapshot.get("primary"), dict) else {}
+    secondary = snapshot.get("secondary") if isinstance(snapshot.get("secondary"), dict) else {}
+    if not primary and not secondary:
+        return None
+
+    def percent(window: dict[str, Any]) -> int:
+        try:
+            return max(0, min(100, int(round(float(window.get("usedPercent", window.get("used_percent", 0)))))))
+        except (TypeError, ValueError):
+            return 0
+
+    plan = ""
+    if isinstance(account, dict):
+        plan = str(account.get("planType") or account.get("plan_type") or "").strip()
+    if not plan:
+        plan = str(snapshot.get("planType") or snapshot.get("plan_type") or "").strip()
+
+    reached = snapshot.get("rateLimitReachedType") or snapshot.get("rate_limit_reached_type")
+    return {
+        "daily_percent": percent(primary),
+        "weekly_percent": percent(secondary),
+        "daily_reset": _reset_from_epoch(primary.get("resetsAt", primary.get("resets_at"))),
+        "weekly_reset": _reset_from_epoch(secondary.get("resetsAt", secondary.get("resets_at"))),
+        "model": "Codex",
+        "requests_today": "N/A",
+        "used_today": "5h session",
+        "status": "limited" if reached else "ok",
+        "account_label": plan,
+        "source": "codex-app-server-rpc",
+        "updated_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+    }
+
+
+def _fetch_codex_reset_credits(timeout: int) -> dict[str, Any] | None:
+    auth = _read_codex_auth()
+    tokens = _codex_tokens(auth)
+    access_token = tokens["access_token"]
+    if not access_token:
+        return None
+
+    headers = {
+        "Authorization": f"Bearer {access_token}",
+        "Accept": "application/json",
+        "User-Agent": "esp32-dashboard-mac-usage-reporter/1.0",
+        "openai-beta": "codex-1",
+        "originator": "Codex Desktop",
+    }
+    account_id = _codex_account_id(tokens["id_token"])
+    if account_id:
+        headers["chatgpt-account-id"] = account_id
+
+    request = urllib.request.Request(CODEX_RESET_CREDITS_URL, method="GET", headers=headers)
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            data = json.loads(response.read().decode("utf-8") or "{}")
+    except (urllib.error.HTTPError, urllib.error.URLError, TimeoutError, json.JSONDecodeError):
+        return None
+
+    available_count, expirations = _parse_codex_reset_credits(data)
+    return {
+        "available_count": available_count,
+        "next_expires_at": expirations[0] if expirations else None,
+        "expirations": expirations,
+    }
+
+
 def _admin_key(args: argparse.Namespace) -> str:
     if args.admin_key:
         return args.admin_key.strip()
@@ -220,7 +489,7 @@ def _admin_key(args: argparse.Namespace) -> str:
     return ""
 
 
-def _payload(source: Path, auto_claude: bool, timeout: int) -> dict[str, Any]:
+def _payload(source: Path, auto_claude: bool, auto_codex: bool, timeout: int, skip_failed_auto: bool) -> dict[str, Any]:
     data = _read_json(source)
     payload: dict[str, Any] = {}
     for agent in ("claude", "codex"):
@@ -235,6 +504,16 @@ def _payload(source: Path, auto_claude: bool, timeout: int) -> dict[str, Any]:
             payload["claude"] = claude
         else:
             print("Claude auto probe unavailable; using source JSON", file=sys.stderr)
+            if skip_failed_auto and payload.get("claude", {}).get("source") not in ("claude-code-headers",):
+                payload.pop("claude", None)
+    if auto_codex:
+        codex = _fetch_codex_usage(timeout)
+        if codex:
+            payload["codex"] = codex
+        else:
+            print("Codex auto probe unavailable; using source JSON", file=sys.stderr)
+            if skip_failed_auto and payload.get("codex", {}).get("source") not in ("codex-app-server-rpc", "codex-reset-credits"):
+                payload.pop("codex", None)
     if not payload:
         raise ValueError("source JSON must contain a claude and/or codex object")
     return payload
@@ -268,6 +547,14 @@ def main() -> int:
                         help="probe Claude Code rate-limit headers and override the claude block")
     parser.add_argument("--no-auto-claude", dest="auto_claude", action="store_false",
                         help="do not probe Claude; only report the source JSON")
+    parser.add_argument("--auto-codex", dest="auto_codex", action="store_true", default=True,
+                        help="probe Codex reset credits and override the codex block")
+    parser.add_argument("--no-auto-codex", dest="auto_codex", action="store_false",
+                        help="do not probe Codex; only report the source JSON")
+    parser.add_argument("--skip-failed-auto", action="store_true", default=True,
+                        help="do not report template fallback blocks when an enabled auto probe fails")
+    parser.add_argument("--no-skip-failed-auto", dest="skip_failed_auto", action="store_false",
+                        help="report source JSON fallback blocks even when auto probes fail")
     parser.add_argument("--init", action="store_true", help="create a template source JSON and exit")
     parser.add_argument("--dry-run", action="store_true", help="print payload without posting")
     args = parser.parse_args()
@@ -287,7 +574,11 @@ def main() -> int:
         print(f"run: {sys.argv[0]} --init", file=sys.stderr)
         return 2
 
-    payload = _payload(source, args.auto_claude, args.timeout)
+    try:
+        payload = _payload(source, args.auto_claude, args.auto_codex, args.timeout, args.skip_failed_auto)
+    except ValueError as exc:
+        print(str(exc), file=sys.stderr)
+        return 1
     if args.dry_run:
         print(json.dumps(payload, ensure_ascii=False, indent=2))
         return 0
