@@ -520,11 +520,14 @@
     }
 
     function usageBlock(label, value, reset, accent) {
+      const known = Number.isFinite(Number(value)) && Number(value) > 0;
+      const displayValue = known ? value : "N/A";
+      const width = known ? value : 0;
       return `
         <div>
           <div class="label">${label}</div>
-          <div class="pct ${accent ? "red" : ""}"><strong>${value}</strong><span>%</span></div>
-          <div class="bar"><div class="fill ${accent ? "red" : ""}" style="width:${value}%"></div></div>
+          <div class="pct ${accent ? "red" : ""}"><strong>${displayValue}</strong>${known ? "<span>%</span>" : ""}</div>
+          <div class="bar"><div class="fill ${accent ? "red" : ""}" style="width:${width}%"></div></div>
           <div class="subline"><span>RESETS ${txt(reset, "--").toUpperCase()}</span></div>
         </div>`;
     }
@@ -551,12 +554,14 @@
     }
 
     function renderWeather(root, weather) {
-      const points = makeTrend(weather.temperature);
+      const numericTemp = Number(weather.temperature);
+      const hasTemp = Number.isFinite(numericTemp);
+      const points = makeTrend(hasTemp ? numericTemp : 0);
       root.innerHTML = `
         <div class="panel-title"><span>Weather</span><span>${txt(weather.condition, "N/A").toUpperCase()}</span></div>
         <div class="mini-body">
           <div class="weather-grid">
-            <div><div class="temp">${Math.round(Number(weather.temperature || 0))}<span>°C</span></div><div class="label">HUM ${txt(weather.humidity, "--")}%</div></div>
+            <div><div class="temp">${hasTemp ? Math.round(numericTemp) : "N/A"}${hasTemp ? "<span>°C</span>" : ""}</div><div class="label">HUM ${txt(weather.humidity, "N/A")}${weather.humidity === "N/A" ? "" : "%"}</div></div>
             <svg width="50" height="25" viewBox="0 0 50 25" shape-rendering="crispEdges"><polyline points="${points}" fill="none" stroke="#b5573a" stroke-width="2"/></svg>
           </div>
           <div class="mini-foot"><span>WIND ${txt(weather.wind, "--")}</span><span>${txt(weather.wind_speed, "--")}</span></div>
@@ -576,15 +581,16 @@
     }
 
     function renderTodos(root, items) {
-      const rows = (items || []).slice(0, 7).map((item) => `
+      const safeItems = items || [];
+      const rows = safeItems.length ? safeItems.slice(0, 7).map((item) => `
         <div class="todo">
           <span class="box ${item.done ? "done" : ""}"></span>
           <span class="truncate">${txt(item.text)}</span>
           <span class="due">${txt(item.due)}</span>
-        </div>`).join("");
-      const done = (items || []).filter((item) => item.done).length;
+        </div>`).join("") : `<div class="todo"><span></span><span class="truncate">N/A</span><span class="due"></span></div>`;
+      const done = safeItems.filter((item) => item.done).length;
       root.innerHTML = `
-        <div class="panel-title"><span>To-Do</span><span>${done}/${(items || []).length || 0}</span></div>
+        <div class="panel-title"><span>To-Do</span><span>${safeItems.length ? `${done}/${safeItems.length}` : "N/A"}</span></div>
         <div class="todo-list">${rows}</div>`;
     }
 

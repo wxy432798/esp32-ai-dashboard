@@ -3,13 +3,18 @@ import os
 from pathlib import Path
 
 
-ROOT = Path(__file__).resolve().parents[2]
-MOCK_JSON = ROOT / "data" / "mock" / "dashboard.json"
-
-
 def _default_usage(agent: str) -> dict:
-    mock = json.loads(MOCK_JSON.read_text(encoding="utf-8"))
-    return mock[agent]
+    return {
+        "daily_percent": 0,
+        "weekly_percent": 0,
+        "daily_reset": "N/A",
+        "weekly_reset": "N/A",
+        "model": "N/A",
+        "requests_today": "N/A",
+        "used_today": "N/A",
+        "status": "not_configured",
+        "source": agent,
+    }
 
 
 def _load_json_file(path: str) -> dict:
@@ -23,7 +28,7 @@ def get_ai_usage(agent: str) -> dict:
 
     - CLAUDE_USAGE_JSON=/path/to/file.json
     - CODEX_USAGE_JSON=/path/to/file.json
-    - fallback to data/mock/dashboard.json
+    - fallback to an explicit N/A block, never mock usage
     """
 
     env_key = "CLAUDE_USAGE_JSON" if agent == "claude" else "CODEX_USAGE_JSON"
@@ -32,4 +37,3 @@ def get_ai_usage(agent: str) -> dict:
         data = _load_json_file(override)
         return data.get(agent, data)
     return _default_usage(agent)
-
