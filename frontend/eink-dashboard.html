@@ -520,7 +520,7 @@
     }
 
     function usageBlock(label, value, reset, accent) {
-      const known = Number.isFinite(Number(value)) && Number(value) > 0;
+      const known = Number.isFinite(Number(value)) && Number(value) >= 0;
       const displayValue = known ? value : "N/A";
       const width = known ? value : 0;
       return `
