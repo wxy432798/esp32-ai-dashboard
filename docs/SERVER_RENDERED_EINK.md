@@ -280,3 +280,51 @@ Partial refresh can be added later with a manifest like:
 ```
 
 For the first stable version, prefer full refresh only.
+
+## Local LAN Relay
+
+For weak long-distance links, run a tiny relay inside the home LAN. The ESP32
+connects to the LAN relay, and the relay fetches/caches frames from the upstream
+server.
+
+Example on macOS:
+
+```bash
+python3 tools/local_eink_relay.py \
+  --host 0.0.0.0 \
+  --port 8788 \
+  --upstream http://107.172.147.113
+```
+
+Find the Mac LAN IP:
+
+```bash
+ipconfig getifaddr en0
+```
+
+Then configure firmware locally:
+
+```c
+#define DASHBOARD_API_HOST "192.168.1.105"
+#define DASHBOARD_API_PORT 8788
+#define DASHBOARD_MANIFEST_PATH "/render/manifest.json"
+#define DASHBOARD_FRAME_PATH "/render/eink.bin"
+```
+
+Test from another device on the same Wi-Fi:
+
+```bash
+curl http://192.168.1.105:8788/health
+curl -I 'http://192.168.1.105:8788/render/eink.bin?offset=0&length=4096'
+```
+
+Expected chunk response:
+
+```text
+HTTP/1.0 206 Partial Content
+Content-Length: 4096
+```
+
+The relay keeps the 30KB frame in memory for a short TTL, so ESP32 downloads
+from the local network instead of repeatedly opening TCP connections to the
+remote VPS.
