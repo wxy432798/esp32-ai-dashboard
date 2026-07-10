@@ -69,7 +69,7 @@ Recommended endpoints:
 GET /api/eink-dashboard
 GET /render/eink.png
 GET /render/eink.bin
-GET /render/eink.bin?offset=0&length=4096
+GET /render/eink.bin with Range: bytes=0-4095
 GET /render/manifest.json
 ```
 
@@ -79,9 +79,11 @@ GET /render/manifest.json
 
 `/render/eink.bin` returns the packed tri-color bitplanes for the ESP32.
 
-`/render/eink.bin?offset=0&length=4096` returns a small byte range from the
-same BIN frame. This is the preferred ESP32 download mode on weak Wi-Fi links,
-because repeated short HTTP responses are more reliable than one 30KB response.
+`/render/eink.bin` supports standard HTTP Range requests. This is the preferred
+ESP32 download mode on weak Wi-Fi links, because repeated short HTTP responses
+are more reliable than one 30KB response. The older query form
+`/render/eink.bin?offset=0&length=4096` may remain available as a compatibility
+fallback.
 
 `/render/manifest.json` tells the ESP32 whether a new frame is available:
 
@@ -315,7 +317,7 @@ Test from another device on the same Wi-Fi:
 
 ```bash
 curl http://192.168.1.105:8788/health
-curl -I 'http://192.168.1.105:8788/render/eink.bin?offset=0&length=4096'
+curl -I -H 'Range: bytes=0-4095' 'http://192.168.1.105:8788/render/eink.bin'
 ```
 
 Expected chunk response:

@@ -78,6 +78,22 @@ class Handler(BaseHTTPRequestHandler):
                 _refresh_cache()
                 data = RelayState.frame
                 query = parse_qs(parsed.query)
+                range_header = self.headers.get("range") or self.headers.get("Range") or ""
+                if range_header.lower().startswith("bytes=") and "-" in range_header:
+                    start_raw, end_raw = range_header[6:].split("-", 1)
+                    offset = max(0, int(start_raw))
+                    end = min(len(data) - 1, int(end_raw) if end_raw else len(data) - 1)
+                    chunk = data[offset:end + 1]
+                    self._send(
+                        206,
+                        "application/octet-stream",
+                        chunk,
+                        {
+                            "accept-ranges": "bytes",
+                            "content-range": f"bytes {offset}-{end}/{len(data)}",
+                        },
+                    )
+                    return
                 if "offset" in query or "length" in query:
                     offset = max(0, int(query.get("offset", ["0"])[0]))
                     length = max(0, int(query.get("length", [str(len(data) - offset)])[0]))
@@ -86,7 +102,10 @@ class Handler(BaseHTTPRequestHandler):
                         206,
                         "application/octet-stream",
                         chunk,
-                        {"content-range": f"bytes {offset}-{offset + len(chunk) - 1}/{len(data)}"},
+                        {
+                            "accept-ranges": "bytes",
+                            "content-range": f"bytes {offset}-{offset + len(chunk) - 1}/{len(data)}",
+                        },
                     )
                     return
                 self._send(200, "application/octet-stream", data)

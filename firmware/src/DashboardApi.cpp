@@ -63,11 +63,18 @@ static bool readHttpLine(WiFiClient& client, String& line, uint32_t timeoutMs) {
 }
 
 static bool openHttpGet(WiFiClient& client, const char* path, const char* accept,
-                        int& contentLength, String& error) {
+                        int& contentLength, String& error,
+                        int32_t rangeStart = -1, int32_t rangeEnd = -1) {
   client.setTimeout(120);
   contentLength = -1;
 
-  Serial.printf("GET http://%s%s\n", DASHBOARD_API_HOST, path);
+  if (rangeStart >= 0 && rangeEnd >= rangeStart) {
+    Serial.printf("GET http://%s%s Range=%ld-%ld\n",
+                  DASHBOARD_API_HOST, path,
+                  static_cast<long>(rangeStart), static_cast<long>(rangeEnd));
+  } else {
+    Serial.printf("GET http://%s%s\n", DASHBOARD_API_HOST, path);
+  }
   if (!client.connect(DASHBOARD_API_HOST, DASHBOARD_API_PORT, 20000)) {
     error = "HTTP TCP connect failed";
     return false;
@@ -87,6 +94,10 @@ static bool openHttpGet(WiFiClient& client, const char* path, const char* accept
   client.print("User-Agent: esp32-ai-dashboard/2.0\r\n");
   client.printf("Accept: %s\r\n", accept);
   client.print("Accept-Encoding: identity\r\n");
+  if (rangeStart >= 0 && rangeEnd >= rangeStart) {
+    client.printf("Range: bytes=%ld-%ld\r\n",
+                  static_cast<long>(rangeStart), static_cast<long>(rangeEnd));
+  }
   client.print("Connection: close\r\n");
   if (String(ESP32_API_KEY).length() > 0) {
     client.printf("X-API-Key: %s\r\n", ESP32_API_KEY);
@@ -186,8 +197,9 @@ static void copyFrameByte(EInkFrame& frame, uint8_t* header, size_t absoluteOffs
 
 static bool fetchFrameChunk(const String& basePath, size_t offset, size_t expected,
                             uint8_t* chunk, String& error) {
-  String path = basePath + "?offset=" + String(static_cast<unsigned>(offset)) +
-                "&length=" + String(static_cast<unsigned>(expected));
+  const String rangePath = basePath;
+  const String queryPath = basePath + "?offset=" + String(static_cast<unsigned>(offset)) +
+                           "&length=" + String(static_cast<unsigned>(expected));
 
   static const uint8_t CHUNK_ATTEMPTS = 15;
   for (uint8_t attempt = 1; attempt <= CHUNK_ATTEMPTS; attempt++) {
@@ -195,10 +207,18 @@ static bool fetchFrameChunk(const String& basePath, size_t offset, size_t expect
                   static_cast<unsigned>(offset), attempt, CHUNK_ATTEMPTS);
     WiFiClient client;
     int contentLength = -1;
-    if (!openHttpGet(client, path.c_str(), "application/octet-stream",
-                     contentLength, error)) {
-      delay(500);
-      continue;
+    const int32_t rangeStart = static_cast<int32_t>(offset);
+    const int32_t rangeEnd = static_cast<int32_t>(offset + expected - 1);
+    bool opened = openHttpGet(client, rangePath.c_str(), "application/octet-stream",
+                              contentLength, error, rangeStart, rangeEnd);
+    if (!opened) {
+      client.stop();
+      Serial.printf("Range chunk failed, trying query fallback: %s\n", error.c_str());
+      if (!openHttpGet(client, queryPath.c_str(), "application/octet-stream",
+                       contentLength, error)) {
+        delay(500);
+        continue;
+      }
     }
     if (contentLength >= 0 && contentLength != static_cast<int>(expected)) {
       error = "Bad chunk length " + String(contentLength) + "/" + String(expected);

@@ -33,6 +33,7 @@ esp32-ai-dashboard/
   docs/API.md                     Dashboard JSON contract
   docs/BACKEND.md                 Backend implementation notes
   docs/SERVER_RENDERED_EINK.md    HTML/CSS -> PNG -> BIN frame pipeline
+  docs/OSS_DIRECT_EINK.md         Direct OSS frame delivery
   frontend/eink-dashboard.html    400 x 300 server-rendered dashboard template
   firmware/                       PlatformIO firmware project
   server/mock_server.py           Local mock HTTP server
@@ -115,6 +116,15 @@ For the current server-rendered frame mode, configure:
 
 ```c
 #define DASHBOARD_API_HOST "107.172.147.113"
+#define DASHBOARD_API_PORT 80
+#define DASHBOARD_MANIFEST_PATH "/render/manifest.json"
+#define DASHBOARD_FRAME_PATH "/render/eink.bin"
+```
+
+For OSS direct delivery, use:
+
+```c
+#define DASHBOARD_API_HOST "claudecodesapi.oss-cn-chengdu.aliyuncs.com"
 #define DASHBOARD_API_PORT 80
 #define DASHBOARD_MANIFEST_PATH "/render/manifest.json"
 #define DASHBOARD_FRAME_PATH "/render/eink.bin"

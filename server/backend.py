@@ -117,6 +117,29 @@ class Handler(BaseHTTPRequestHandler):
     def _render_file_response(self, file_path, content_type):
         raw = file_path.read_bytes()
         query = parse_qs(urlparse(self.path).query)
+        range_header = self.headers.get("range") or self.headers.get("Range") or ""
+        if range_header.lower().startswith("bytes=") and "-" in range_header:
+            try:
+                start_raw, end_raw = range_header[6:].split("-", 1)
+                offset = max(0, int(start_raw))
+                end = min(len(raw) - 1, int(end_raw) if end_raw else len(raw) - 1)
+            except ValueError:
+                self._json(416, {"error": "invalid range"})
+                return
+            if offset > len(raw) or end < offset:
+                self._json(416, {"error": "range outside frame"})
+                return
+            chunk = raw[offset:end + 1]
+            self.send_response(206)
+            self.send_header("content-type", content_type)
+            self.send_header("cache-control", "public, max-age=60")
+            self.send_header("content-length", str(len(chunk)))
+            self.send_header("accept-ranges", "bytes")
+            self.send_header("content-range", f"bytes {offset}-{end}/{len(raw)}")
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(chunk)
+            return
         if "offset" in query or "length" in query:
             try:
                 offset = max(0, int(query.get("offset", ["0"])[0]))
@@ -132,6 +155,7 @@ class Handler(BaseHTTPRequestHandler):
             self.send_header("content-type", content_type)
             self.send_header("cache-control", "public, max-age=60")
             self.send_header("content-length", str(len(chunk)))
+            self.send_header("accept-ranges", "bytes")
             self.send_header("content-range", f"bytes {offset}-{offset + len(chunk) - 1}/{len(raw)}")
             self.end_headers()
             if self.command != "HEAD":

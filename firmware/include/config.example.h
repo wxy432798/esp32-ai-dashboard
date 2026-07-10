@@ -11,6 +11,12 @@
 #define DASHBOARD_MANIFEST_PATH "/render/manifest.json"
 #define DASHBOARD_FRAME_PATH "/render/eink.bin"
 
+// OSS direct-read example. Keep OSS AccessKey only on Mac/server upload side.
+// #define DASHBOARD_API_HOST "claudecodesapi.oss-cn-chengdu.aliyuncs.com"
+// #define DASHBOARD_API_PORT 80
+// #define DASHBOARD_MANIFEST_PATH "/render/manifest.json"
+// #define DASHBOARD_FRAME_PATH "/render/eink.bin"
+
 // Optional. Leave empty if the backend endpoint is in open test mode.
 #define ESP32_API_KEY ""
 
