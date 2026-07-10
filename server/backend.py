@@ -6,6 +6,7 @@ from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
 from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
 from providers.ai_usage import get_ai_usage
 from renderer import ensure_rendered_frame
@@ -40,10 +41,16 @@ def dashboard_payload(refresh_interval_sec=DEFAULT_REFRESH_SEC):
     claude = get_ai_usage("claude")
     codex = get_ai_usage("codex")
     todos = load_todos(limit=7)
+    tz_name = os.environ.get("DASHBOARD_TZ", "UTC")
+    try:
+        now = datetime.now(ZoneInfo(tz_name))
+    except ZoneInfoNotFoundError:
+        now = datetime.now()
     return {
         "refresh_interval_sec": refresh_interval_sec,
         "refresh_interval": refresh_interval_sec,
-        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
+        "updated_at": now.strftime("%Y-%m-%d %H:%M"),
+        "timezone": tz_name,
         "claude": claude,
         "codex": codex,
         "ai": {
