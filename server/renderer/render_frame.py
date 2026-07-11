@@ -88,13 +88,76 @@ def _screenshot(rendered_html):
     return raw_png
 
 
-def _classify_pixel(r, g, b):
-    if r > 130 and r > g * 1.25 and r > b * 1.25 and r - max(g, b) > 35:
-        return "red"
-    luminance = (299 * r + 587 * g + 114 * b) / 1000
-    if luminance < 165:
-        return "black"
-    return "white"
+# Physical ink colors of the GDEY042Z98 e-paper panel
+_INK = [
+    (40, 36, 34),    # 0 = black
+    (228, 222, 210), # 1 = white
+    (178, 58, 46),   # 2 = red
+]
+_INK_PREVIEW = [(0, 0, 0), (255, 255, 255), (210, 32, 24)]
+
+# Bayer 8×8 ordered dithering matrix (values 0-63)
+_BAYER8 = [
+    [ 0,32, 8,40, 2,34,10,42],
+    [48,16,56,24,50,18,58,26],
+    [12,44, 4,36,14,46, 6,38],
+    [60,28,52,20,62,30,54,22],
+    [ 3,35,11,43, 1,33, 9,41],
+    [51,19,59,27,49,17,57,25],
+    [15,47, 7,39,13,45, 5,37],
+    [63,31,55,23,61,29,53,21],
+]
+_BAYER_N = 64
+
+
+def _lum(c):
+    return 0.299 * c[0] + 0.587 * c[1] + 0.114 * c[2]
+
+
+def _yliluoma_plan(r, g, b, n):
+    """Greedy Yliluoma mixing: pick n inks whose running average ≈ target."""
+    target = (r, g, b)
+    plan = []
+    sr = sg = sb = 0
+    for i in range(n):
+        best = 0
+        best_err = float("inf")
+        k = i + 1
+        for p, ink in enumerate(_INK):
+            ar = (sr + ink[0]) / k
+            ag = (sg + ink[1]) / k
+            ab = (sb + ink[2]) / k
+            err = (0.299 * (ar - target[0]) ** 2
+                   + 0.587 * (ag - target[1]) ** 2
+                   + 0.114 * (ab - target[2]) ** 2)
+            if err < best_err:
+                best_err = err
+                best = p
+        plan.append(best)
+        sr += _INK[best][0]
+        sg += _INK[best][1]
+        sb += _INK[best][2]
+    plan.sort(key=lambda p: _lum(_INK[p]))
+    return plan
+
+
+_plan_cache: dict = {}
+
+
+def _get_plan(r, g, b):
+    key = (r >> 2, g >> 2, b >> 2)
+    p = _plan_cache.get(key)
+    if p is None:
+        p = _yliluoma_plan(r, g, b, _BAYER_N)
+        _plan_cache[key] = p
+    return p
+
+
+def _dither_pixel(r, g, b, x, y):
+    """Return ink index (0=black,1=white,2=red) for pixel at (x,y)."""
+    threshold = _BAYER8[y % 8][x % 8]
+    plan = _get_plan(r, g, b)
+    return plan[threshold % _BAYER_N]
 
 
 def _set_bit(buffer, index):
@@ -115,15 +178,12 @@ def _quantize_and_pack(raw_png):
     for y in range(HEIGHT):
         for x in range(WIDTH):
             idx = y * WIDTH + x
-            cls = _classify_pixel(*source[x, y])
-            if cls == "black":
+            ink = _dither_pixel(*source[x, y], x, y)
+            if ink == 0:  # black
                 _set_bit(black, idx)
-                target[x, y] = (0, 0, 0)
-            elif cls == "red":
+            elif ink == 2:  # red
                 _set_bit(red, idx)
-                target[x, y] = (210, 32, 24)
-            else:
-                target[x, y] = (255, 255, 255)
+            target[x, y] = _INK_PREVIEW[ink]
 
     payload = bytes(black) + bytes(red)
     crc = zlib.crc32(payload) & 0xffffffff
