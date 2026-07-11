@@ -5,6 +5,13 @@
 #define WIFI_SSID "YOUR_WIFI"
 #define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
 
+// Optional: add multiple known networks so the device can roam without
+// reflashing firmware whenever you switch hotspot/router.
+// #define WIFI_NETWORKS { \
+//   {"YOUR_HOME_WIFI", "YOUR_HOME_PASSWORD"}, \
+//   {"YOUR_PHONE_HOTSPOT", "YOUR_PHONE_PASSWORD"}, \
+// }
+
 // The raw HTTP client uses host/port/path so it can retry reliably on ESP32.
 #define DASHBOARD_API_HOST "YOUR_SERVER"
 #define DASHBOARD_API_PORT 80

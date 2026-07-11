@@ -9,6 +9,19 @@
 #include "DisplayConfig.h"
 #include "config.h"
 
+struct WifiCredential {
+  const char* ssid;
+  const char* password;
+};
+
+#ifndef WIFI_NETWORKS
+#define WIFI_NETWORKS {{WIFI_SSID, WIFI_PASSWORD}}
+#endif
+
+static const WifiCredential WIFI_CREDENTIALS[] = WIFI_NETWORKS;
+static const size_t WIFI_CREDENTIALS_COUNT =
+    sizeof(WIFI_CREDENTIALS) / sizeof(WIFI_CREDENTIALS[0]);
+
 DashboardDisplay display(DashboardPanel(EPD_CS, EPD_DC, EPD_RST, EPD_BUSY));
 DashboardUI ui(display);
 DashboardApi api;
@@ -57,28 +70,85 @@ static void cycleRefreshPreference() {
   Serial.printf("Local refresh interval saved: %u seconds\n", localRefreshSeconds);
 }
 
+static bool validWifiCredential(size_t index) {
+  return index < WIFI_CREDENTIALS_COUNT &&
+         WIFI_CREDENTIALS[index].ssid != nullptr &&
+         WIFI_CREDENTIALS[index].ssid[0] != '\0';
+}
+
+static bool waitForWifi(uint32_t timeoutMs) {
+  uint32_t started = millis();
+  while (WiFi.status() != WL_CONNECTED && millis() - started < timeoutMs) {
+    delay(500);
+    Serial.print(".");
+  }
+  Serial.println();
+  return WiFi.status() == WL_CONNECTED;
+}
+
+static bool connectWifiCredential(size_t index) {
+  if (!validWifiCredential(index)) return false;
+
+  WiFi.disconnect(false, false);
+  delay(100);
+  WiFi.begin(WIFI_CREDENTIALS[index].ssid, WIFI_CREDENTIALS[index].password);
+  Serial.printf("WiFi SSID=%s", WIFI_CREDENTIALS[index].ssid);
+
+  if (!waitForWifi(16000)) return false;
+
+  prefs.putInt("wifi_i", static_cast<int>(index));
+  Serial.printf("IP=%s RSSI=%d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
+  return true;
+}
+
+static int bestConfiguredNetworkFromScan() {
+  int found = WiFi.scanNetworks();
+  Serial.printf("WiFi scan found %d networks\n", found);
+
+  int bestIndex = -1;
+  int bestRssi = -1000;
+  for (int i = 0; i < found; i++) {
+    const String scannedSsid = WiFi.SSID(i);
+    Serial.printf("  SSID[%d]=%s RSSI=%d CH=%d ENC=%d\n",
+                  i, scannedSsid.c_str(), WiFi.RSSI(i),
+                  WiFi.channel(i), WiFi.encryptionType(i));
+    for (size_t j = 0; j < WIFI_CREDENTIALS_COUNT; j++) {
+      if (validWifiCredential(j) &&
+          scannedSsid == WIFI_CREDENTIALS[j].ssid &&
+          WiFi.RSSI(i) > bestRssi) {
+        bestIndex = static_cast<int>(j);
+        bestRssi = WiFi.RSSI(i);
+      }
+    }
+  }
+  WiFi.scanDelete();
+  return bestIndex;
+}
+
 static void connectWifi() {
   if (WiFi.status() == WL_CONNECTED) return;
 
   WiFi.mode(WIFI_STA);
   WiFi.setSleep(false);
   WiFi.setAutoReconnect(true);
-  WiFi.begin(WIFI_SSID, WIFI_PASSWORD);
   esp_wifi_set_ps(WIFI_PS_NONE);
-  Serial.printf("WiFi SSID=%s", WIFI_SSID);
 
-  uint32_t started = millis();
-  while (WiFi.status() != WL_CONNECTED && millis() - started < 20000) {
-    delay(500);
-    Serial.print(".");
+  int savedIndex = prefs.getInt("wifi_i", -1);
+  if (savedIndex >= 0 && validWifiCredential(static_cast<size_t>(savedIndex))) {
+    Serial.printf("Trying saved WiFi profile %d\n", savedIndex);
+    if (connectWifiCredential(static_cast<size_t>(savedIndex))) return;
   }
-  Serial.println();
 
-  if (WiFi.status() == WL_CONNECTED) {
-    Serial.printf("IP=%s RSSI=%d\n", WiFi.localIP().toString().c_str(), WiFi.RSSI());
-  } else {
-    Serial.println("WiFi failed");
+  int bestIndex = bestConfiguredNetworkFromScan();
+  if (bestIndex >= 0 && connectWifiCredential(static_cast<size_t>(bestIndex))) return;
+
+  Serial.println("No configured WiFi found; trying all saved profiles");
+  for (size_t i = 0; i < WIFI_CREDENTIALS_COUNT; i++) {
+    if (static_cast<int>(i) == savedIndex || static_cast<int>(i) == bestIndex) continue;
+    if (connectWifiCredential(i)) return;
   }
+
+  Serial.println("WiFi failed");
 }
 
 static void refreshDashboard(bool forced) {
