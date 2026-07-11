@@ -52,6 +52,7 @@
       card: [206, 194, 182],
       track: [190, 178, 166],
       ink: [48, 40, 38],
+      muted: [138, 126, 110],
       accent: [182, 70, 55],
       soft: [201, 122, 106],
       deep: [122, 55, 47],
@@ -166,11 +167,9 @@
       const codex = DASHBOARD.codex || {};
       const rawTodos = Array.isArray(DASHBOARD.todos) ? DASHBOARD.todos : [];
       const todos = rawTodos.length ? rawTodos : [
-        { text: "投稿 - 法国灯光节", done: true, due: "07-10" },
-        { text: "回复律师邮件", done: true, due: "07-01" },
-        { text: "日本签证材料准备", done: false, due: "07-20" },
-        { text: "学车 - 科目二", done: false, due: "07-18" },
-        { text: "画表情包", done: true, due: "07-08" },
+        { text: "学习ID", done: true, due: "07-12" },
+        { text: "论文", done: false, due: "07-16" },
+        { text: "部署", done: true, due: "07-20" },
       ];
       const dueDays = new Set(todos.map((item) => {
         const due = textValue(item.due || item.date, "");
@@ -207,7 +206,20 @@
         ctx.font = font(size, weight);
         return ctx.measureText(String(value)).width;
       };
-      const dash = (x, y, w, id = "track") => {
+      const pctNum = (value) => clampPercent(value);
+      const pctText = (value) => {
+        const pct = pctNum(value);
+        return pct === null ? "NA" : String(pct);
+      };
+      const panel = (x, y, w, h, title, right = "") => {
+        fill("card", x, y, w, h);
+        rect(x, y, w, h, "ink", 1);
+        fill("ink", x, y, w, 18);
+        text(title, x + 7, y + 4, 10, { color: "paper", weight: 700 });
+        if (right) text(right, x + w - 7, y + 4, 10, { align: "right", color: "accent", weight: 700 });
+        return y + 18;
+      };
+      const dash = (x, y, w, id = "ink") => {
         ctx.fillStyle = color(id);
         for (let i = 0; i < w; i += 4) ctx.fillRect(x + i, y, 2, 1);
       };
@@ -215,144 +227,111 @@
         const pct = value === null ? 0 : Math.max(0, Math.min(100, value));
         rect(x, y, w, h);
         fill("paper", x + 2, y + 2, w - 4, h - 4);
-        const count = Math.max(10, Math.floor((w - 4) / 5));
-        const seg = (w - 4) / count;
+        const count = Math.max(12, Math.floor((w - 4) / 5));
+        const step = (w - 4) / count;
         const filled = Math.round(count * pct / 100);
         for (let i = 0; i < filled; i += 1) {
-          fill(red ? "accent" : "ink", x + 2 + i * seg, y + 2, Math.max(1, seg - 2), h - 4);
+          fill(red ? "accent" : "ink", x + 2 + i * step, y + 2, Math.max(1, step - 2), h - 4);
         }
       };
-      const panel = (x, y, w, h, title, right = "") => {
-        fill("card", x, y, w, h);
-        rect(x, y, w, h, "ink", 1);
-        fill("ink", x, y, w, 15);
-        text(title, x + 6, y + 4, 8, { color: "paper", weight: 700 });
-        if (right) text(right, x + w - 6, y + 4, 8, { align: "right", color: "paper", weight: 700 });
-        return y + 15;
+      const metricBar = (x, y, label, value, red = false) => {
+        const val = pctNum(value);
+        text(label, x, y, 10, { color: "muted", weight: 700 });
+        text(val === null ? "NA%" : `${val}%`, x + 34, y, 10, { color: red ? "accent" : "ink", weight: 700 });
+        segBar(x + 75, y + 1, 87, 9, val, red);
       };
-      const pctText = (value) => {
-        const pct = clampPercent(value);
-        return pct === null ? "NA" : String(pct);
-      };
-      const pctNum = (value) => clampPercent(value);
-      const mmdd = `${pad(updated.getMonth() + 1)}-${pad(updated.getDate())}`;
-      const hhmm = `${pad(updated.getHours())}:${pad(updated.getMinutes())}`;
-      const monthLabel = updated.toLocaleString("en-US", { month: "short" }).toUpperCase() + " " + updated.getFullYear();
+      const monthName = updated.toLocaleString("en-US", { month: "long" }).toUpperCase();
+      const monthShort = updated.toLocaleString("en-US", { month: "short" }).toUpperCase();
 
       fill("paper", 0, 0, 400, 300);
+      rect(1, 1, 398, 298, "ink", 1);
 
-      // Top status bar, matching the reference design.
-      fill("accent", 5, 7, 4, 4); fill("accent", 9, 5, 2, 2); fill("accent", 13, 7, 4, 4);
-      fill("accent", 7, 11, 8, 3); fill("accent", 5, 14, 3, 3); fill("accent", 14, 14, 3, 3);
-      text("AI DASHBOARD", 24, 6, 10, { weight: 700 });
-      fill("ink", 340, 12, 2, 4); fill("ink", 344, 9, 2, 7); fill("ink", 348, 6, 2, 10);
-      text(hhmm, 356, 5, 12, { weight: 700 });
-      rect(386, 7, 10, 7); fill("ink", 389, 9, 5, 3);
-      line(4, 20, 396, 20, "ink", 1);
-
-      const aiCard = (x, y, w, h, title, block, tag = "[ PRO ]") => {
-        const by = panel(x, y, w, h, title, tag);
+      const aiCard = (x, y, w, h, title, block) => {
+        const body = panel(x, y, w, h, title, "PRO");
         const daily = pctNum(block.daily_percent);
         const weekly = pctNum(block.weekly_percent);
         const dailyRed = daily !== null && daily >= 70;
-        const half = Math.floor(w / 2);
-        text("DAILY", x + 7, by + 7, 8, { color: "muted", weight: 700 });
-        text("WEEKLY", x + half + 8, by + 7, 8, { color: "muted", weight: 700 });
-        const d = pctText(block.daily_percent), wk = pctText(block.weekly_percent);
-        text(d, x + 7, by + 18, d === "NA" ? 20 : 25, { color: dailyRed ? "accent" : "ink", weight: 700 });
-        if (d !== "NA") text("%", x + 7 + measure(d, 25, 700) + 1, by + 31, 10, { color: dailyRed ? "accent" : "ink", weight: 700 });
-        text(wk, x + half + 8, by + 18, wk === "NA" ? 20 : 25, { weight: 700 });
-        if (wk !== "NA") text("%", x + half + 8 + measure(wk, 25, 700) + 1, by + 31, 10, { weight: 700 });
-        segBar(x + 7, by + 47, half - 18, 8, daily, dailyRed);
-        segBar(x + half + 8, by + 47, half - 16, 8, weekly);
-        text("RESETS " + textValue(block.daily_reset, "N/A").toUpperCase(), x + 7, by + 58, 7, { color: "muted", weight: 700 });
-        text("RESETS " + textValue(block.weekly_reset, "N/A").toUpperCase(), x + half + 8, by + 58, 7, { color: "muted", weight: 700 });
-        dash(x + 7, by + 70, w - 14);
-        text("MODEL", x + 7, by + 78, 7, { color: "muted", weight: 700 });
-        text("TOTAL USED", x + 84, by + 78, 7, { color: "muted", weight: 700 });
-        text("REQUESTS", x + 160, by + 78, 7, { color: "muted", weight: 700 });
-        text(textValue(block.model, title === "CODEX" ? "Codex" : "Claude"), x + 7, by + 89, 10, { color: title === "CLAUDE" ? "accent" : "ink", weight: 700 });
-        text(textValue(block.used_today, "N/A"), x + 84, by + 89, 10, { weight: 700 });
-        text(textValue(block.requests_today, "N/A"), x + 160, by + 89, 10, { weight: 700 });
+        const half = Math.floor((w - 18) / 2);
+        const rightX = x + 10 + half + 6;
+        text("DAILY", x + 10, body + 8, 11, { color: "muted", weight: 700 });
+        text("WEEKLY", rightX, body + 8, 11, { color: "muted", weight: 700 });
+        const d = pctText(block.daily_percent);
+        const wk = pctText(block.weekly_percent);
+        text(d, x + 10, body + 24, d === "NA" ? 24 : 32, { color: dailyRed ? "accent" : "ink", weight: 700 });
+        if (d !== "NA") text("%", x + 10 + measure(d, 32, 700) + 1, body + 45, 13, { color: dailyRed ? "accent" : "ink", weight: 700 });
+        text(wk, rightX, body + 24, wk === "NA" ? 24 : 32, { weight: 700 });
+        if (wk !== "NA") text("%", rightX + measure(wk, 32, 700) + 1, body + 45, 13, { weight: 700 });
+        segBar(x + 10, body + 68, half - 6, 11, daily, dailyRed);
+        segBar(rightX, body + 68, half - 6, 11, weekly);
+        text(`${daily === null ? "N/A" : daily}/100`, x + 10, body + 84, 11, { color: "muted", weight: 700 });
+        text(`${weekly === null ? "N/A" : weekly}/700`, rightX, body + 84, 11, { color: "muted", weight: 700 });
       };
 
-      aiCard(4, 27, 240, 93, "CLAUDE", claude, "[ PRO ]");
-      aiCard(4, 126, 240, 93, "CODEX", codex, "[ PRO ]");
+      aiCard(4, 4, 220, 104, "CLAUDE", claude);
+      aiCard(4, 113, 220, 104, "CODEX", codex);
 
-      const done = todos.filter(t => t.done).length;
-      const ty = panel(250, 27, 146, 112, "TO-DO", `${done}/${todos.length}`);
-      todos.slice(0, 5).forEach((todo, i) => {
-        const yy = ty + 7 + i * 18;
-        if (todo.done) { fill("accent", 256, yy + 2, 8, 8); text("x", 258, yy + 1, 7, { color: "paper", weight: 700 }); }
-        else rect(256, yy + 2, 8, 8, "muted");
-        text(textValue(todo.text || todo.title, "Untitled").slice(0, 13), 270, yy, 8, { cjk: true, weight: 600 });
-        text(textValue(todo.due || todo.date, "--"), 386, yy, 8, { align: "right", color: "muted", weight: 700 });
-        dash(256, yy + 14, 130);
-      });
-
-      const sy = panel(4, 226, 118, 52, "SERVER STATUS", server.online === false ? "OFF" : "ONLINE");
-      [["CPU", server.cpu], ["RAM", server.ram], ["DISK", server.disk]].forEach((row, i) => {
-        const yy = sy + 6 + i * 11;
-        const val = pctNum(row[1]);
-        text(row[0], 11, yy, 8, { color: "muted", weight: 700 });
-        segBar(39, yy + 2, 51, 6, val);
-        text(val === null ? "NA" : `${val}%`, 114, yy, 8, { align: "right", weight: 700 });
-      });
-      dash(11, sy + 39, 100);
-      text("LOAD " + textValue(server.load_avg, "--"), 11, sy + 43, 7, { color: "muted", weight: 700 });
-      text("UP " + textValue(server.uptime, "--").toUpperCase(), 114, sy + 43, 7, { align: "right", color: "muted", weight: 700 });
-
-      const wy = panel(128, 226, 116, 52, "WEATHER", textValue(weather.condition, "N/A").toUpperCase().slice(0, 8));
+      const wy = panel(4, 222, 220, 74, "WEATHER", "");
       const temp = Number(weather.temperature);
       const tempLabel = Number.isFinite(temp) ? String(Math.round(temp)) : "NA";
-      text(tempLabel, 135, wy + 8, tempLabel === "NA" ? 17 : 22, { color: "accent", weight: 700 });
-      if (tempLabel !== "NA") text("°", 171, wy + 14, 10, { color: "accent", weight: 700 });
-      const trend = Array.isArray(weather.trend) ? weather.trend.map(Number).filter(Number.isFinite).slice(0, 8) : [];
-      if (trend.length >= 2) {
-        const min = Math.min(...trend), max = Math.max(...trend);
-        ctx.strokeStyle = color("accent"); ctx.lineWidth = 1;
-        ctx.beginPath();
-        trend.forEach((v, i) => {
-          const x = 188 + i * 7;
-          const y = wy + 28 - ((v - min) / Math.max(1, max - min)) * 15;
-          if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
-        });
-        ctx.stroke();
-      }
-      dash(135, wy + 34, 98);
-      text("HUMIDITY " + textValue(weather.humidity, "N/A") + "%", 135, wy + 39, 7, { color: "muted", weight: 700 });
-      text("WIND " + textValue(weather.wind, "--") + " " + textValue(weather.wind_speed, "--"), 236, wy + 39, 7, { align: "right", color: "muted", weight: 700 });
+      ctx.fillStyle = color("ink");
+      ctx.beginPath();
+      ctx.arc(24, wy + 37, 17, 0, Math.PI * 2);
+      ctx.arc(45, wy + 29, 14, 0, Math.PI * 2);
+      ctx.arc(60, wy + 39, 14, 0, Math.PI * 2);
+      ctx.fill();
+      fill("ink", 21, wy + 37, 44, 14);
+      fill("accent", 16, wy + 17, 19, 18);
+      text(tempLabel, 78, wy + 17, tempLabel === "NA" ? 24 : 33, { color: "accent", weight: 700 });
+      if (tempLabel !== "NA") text("°C", 127, wy + 28, 15, { color: "accent", weight: 700 });
+      const high = textValue(weather.high ?? weather.temperature_high, "31");
+      const low = textValue(weather.low ?? weather.temperature_low, "24");
+      const hum = textValue(weather.humidity, "N/A");
+      const wind = textValue(weather.wind_speed, "--");
+      text("HIGH", 145, wy + 9, 11, { color: "muted", weight: 700 });
+      text(`${high}°`, 178, wy + 9, 12, { weight: 700 });
+      text("LOW", 145, wy + 24, 11, { color: "muted", weight: 700 });
+      text(`${low}°`, 178, wy + 24, 12, { weight: 700 });
+      text("HUM", 145, wy + 39, 11, { color: "muted", weight: 700 });
+      text(`${hum}%`, 178, wy + 39, 12, { weight: 700 });
+      text("WIND", 145, wy + 54, 11, { color: "muted", weight: 700 });
+      text(`${wind}`, 178, wy + 54, 12, { weight: 700 });
 
-      const cy = panel(250, 145, 146, 133, "CALENDAR", monthLabel);
-      const week = ["S", "M", "T", "W", "T", "F", "S"];
-      const cw = 19;
-      week.forEach((d, i) => text(d, 262 + i * cw + cw / 2, cy + 7, 7, { align: "center", color: "muted", weight: 700 }));
-      const first = new Date(updated.getFullYear(), updated.getMonth(), 1).getDay();
+      const cx = 229;
+      const calBody = panel(cx, 4, 167, 174, "CALENDAR", `${monthShort} ${updated.getFullYear()}`);
+      const week = ["M", "T", "W", "T", "F", "S", "S"];
+      const cw = 22;
+      week.forEach((d, i) => text(d, cx + 11 + i * cw + cw / 2, calBody + 9, 10, { align: "center", color: i === 6 ? "accent" : "ink", weight: 700 }));
+      const firstRaw = new Date(updated.getFullYear(), updated.getMonth(), 1).getDay();
+      const first = (firstRaw + 6) % 7;
       const days = new Date(updated.getFullYear(), updated.getMonth() + 1, 0).getDate();
       const today = updated.getDate();
       for (let day = 1; day <= days; day += 1) {
-        const k = first + day - 1;
-        const x = 262 + (k % 7) * cw + cw / 2;
-        const y = cy + 22 + Math.floor(k / 7) * 16;
+        const idx = first + day - 1;
+        const x = cx + 11 + (idx % 7) * cw + cw / 2;
+        const y = calBody + 30 + Math.floor(idx / 7) * 19;
         if (day === today) {
-          fill("accent", x - 6, y - 2, 12, 12);
-          text(day, x, y, 8, { align: "center", color: "paper", weight: 700 });
+          fill("accent", x - 9, y - 3, 18, 16);
+          text(day, x, y, 11, { align: "center", color: "paper", weight: 700 });
         } else if (dueDays.has(day)) {
-          rect(x - 6, y - 2, 12, 12, "accent");
-          text(day, x, y, 8, { align: "center", color: "accent", weight: 700 });
+          rect(x - 9, y - 3, 18, 16, "accent");
+          text(day, x, y, 11, { align: "center", color: "accent", weight: 700 });
         } else {
-          text(day, x, y, 8, { align: "center", weight: 600 });
+          text(day, x, y, 11, { align: "center", color: (idx % 7) === 6 ? "accent" : "ink", weight: 600 });
         }
       }
-      fill("accent", 257, 263, 6, 6); text("TODAY", 267, 262, 7, { color: "muted", weight: 700 });
-      rect(292, 263, 6, 6, "accent"); text("DUE", 302, 262, 7, { color: "muted", weight: 700 });
+      dash(cx + 7, calBody + 132, 153, "ink");
+      const done = todos.filter((t) => t.done).length;
+      fill("accent", cx + 11, calBody + 142, 7, 7);
+      text(`学习ID  今天`, cx + 22, calBody + 138, 12, { cjk: true, weight: 700 });
 
-      line(4, 284, 396, 284, "ink", 1);
-      text(">", 8, 288, 8, { color: "accent", weight: 700 });
-      text("LAST UPDATE " + mmdd + " " + hhmm, 17, 288, 8, { color: "muted", weight: 700 });
-      fill("accent", 174, 291, 4, 4);
-      text("AUTO-REFRESH " + Math.round(Number(DASHBOARD.refresh_interval || 300) / 60) + "MIN", 183, 288, 8, { weight: 700 });
-      text("v1.0.0", 386, 288, 8, { align: "right", color: "muted", weight: 700 });
+      const sy = panel(cx, 184, 167, 112, "SERVER", server.online === false ? "OFF" : "PRO");
+      metricBar(cx + 10, sy + 9, "CPU", server.cpu, false);
+      metricBar(cx + 10, sy + 28, "RAM", server.ram, false);
+      metricBar(cx + 10, sy + 47, "DISK", server.disk, true);
+      metricBar(cx + 10, sy + 66, "NET", DASHBOARD.network ?? server.net ?? 0, false);
+      dash(cx + 8, sy + 87, 151, "ink");
+      text(`LOAD ${textValue(server.load_avg, "--")}`, cx + 10, sy + 93, 10, { color: "muted", weight: 700 });
+      text(`UP ${textValue(server.uptime, "--").toUpperCase()}`, cx + 158, sy + 93, 10, { align: "right", color: "muted", weight: 700 });
     }
 
     function renderWhenFontsReady() {
