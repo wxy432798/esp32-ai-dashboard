@@ -32,6 +32,12 @@ def _chrome_bin():
         found = shutil.which(candidate)
         if found:
             return found
+    for candidate in (
+        "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome",
+        "/Applications/Chromium.app/Contents/MacOS/Chromium",
+    ):
+        if Path(candidate).exists():
+            return candidate
     raise RuntimeError("Chromium is not installed or CHROMIUM_BIN is not set")
 
 

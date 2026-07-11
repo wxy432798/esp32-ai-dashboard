@@ -27,6 +27,8 @@ def get_weather() -> dict:
                 "latitude": lat,
                 "longitude": lon,
                 "current": "temperature_2m,relative_humidity_2m,wind_speed_10m,wind_direction_10m,weather_code",
+                "hourly": "temperature_2m",
+                "forecast_days": 2,
                 "wind_speed_unit": "ms",
                 "timezone": "auto",
             })
@@ -39,6 +41,7 @@ def get_weather() -> dict:
                 "wind": _wind_direction(current.get("wind_direction_10m")),
                 "wind_speed": _wind_speed(current.get("wind_speed_10m")),
                 "condition": _weather_code(current.get("weather_code")),
+                "trend": _temperature_trend(data),
                 "source": "open-meteo",
             }
         except Exception as exc:
@@ -62,6 +65,23 @@ def _wind_speed(value):
     if isinstance(value, (int, float)):
         return f"{value:.1f}m/s"
     return "N/A"
+
+
+def _temperature_trend(data: dict) -> list[float]:
+    current_time = str(data.get("current", {}).get("time") or "")
+    hourly = data.get("hourly") if isinstance(data.get("hourly"), dict) else {}
+    times = hourly.get("time") if isinstance(hourly.get("time"), list) else []
+    temps = hourly.get("temperature_2m") if isinstance(hourly.get("temperature_2m"), list) else []
+    if not times or not temps:
+        return []
+    start = 0
+    if current_time in times:
+        start = times.index(current_time)
+    values = []
+    for value in temps[start:start + 8]:
+        if isinstance(value, (int, float)):
+            values.append(round(float(value), 1))
+    return values
 
 
 def _wind_direction(degrees):
