@@ -12,6 +12,11 @@
 //   {"YOUR_PHONE_HOTSPOT", "YOUR_PHONE_PASSWORD"}, \
 // }
 
+// Long-press the side button, or hold it while booting, to start this setup AP.
+// Then join this Wi-Fi from your phone and open http://192.168.4.1/.
+#define CONFIG_PORTAL_AP_SSID "ESP32-Dashboard"
+#define CONFIG_PORTAL_AP_PASSWORD "configure"
+
 // The raw HTTP client uses host/port/path so it can retry reliably on ESP32.
 #define DASHBOARD_API_HOST "YOUR_SERVER"
 #define DASHBOARD_API_PORT 80
