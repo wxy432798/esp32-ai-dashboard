@@ -4,6 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=400, height=300, initial-scale=1">
   <style>
+    @import url("https://fontsapi.zeoseven.com/925/main/result.css");
     @font-face {
       font-family: "Pixelify Sans";
       font-style: normal;
@@ -194,7 +195,7 @@
         ctx.lineWidth = width;
         ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
       };
-      const font = (size, weight = 600, cjk = false) => `${weight} ${size}px "Pixelify Sans", ${cjk ? '"Noto Sans CJK SC", "PingFang SC", ' : ''}"Menlo", "Monaco", monospace`;
+      const font = (size, weight = 600, cjk = false) => `${weight} ${size}px "Ark Pixel 12px Prop latin", "Pixelify Sans", ${cjk ? '"Noto Sans CJK SC", "PingFang SC", ' : ''}"Menlo", "Monaco", monospace`;
       const text = (value, x, y, size, options = {}) => {
         ctx.font = font(size, options.weight || 600, options.cjk || false);
         ctx.textAlign = options.align || "left";
