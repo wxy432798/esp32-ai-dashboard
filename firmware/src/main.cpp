@@ -53,6 +53,8 @@ static const byte DNS_PORT = 53;
 #define CONFIG_PORTAL_AP_PASSWORD "configure"
 #endif
 
+static void startConfigPortal();
+
 static uint16_t effectiveRefreshSeconds() {
   if (manifest.refreshSeconds > 0) return manifest.refreshSeconds;
   return localRefreshSeconds;
@@ -195,7 +197,17 @@ static bool validWifiCredential(size_t index) {
 
 static bool waitForWifi(uint32_t timeoutMs) {
   uint32_t started = millis();
+  uint32_t buttonPressedAt = 0;
   while (WiFi.status() != WL_CONNECTED && millis() - started < timeoutMs) {
+    if (digitalRead(PIN_SIDE_BUTTON) == LOW) {
+      if (buttonPressedAt == 0) buttonPressedAt = millis();
+      if (millis() - buttonPressedAt >= LONG_PRESS_MS) {
+        Serial.println("\nButton held during WiFi connect; entering config portal");
+        startConfigPortal();
+      }
+    } else {
+      buttonPressedAt = 0;
+    }
     delay(500);
     Serial.print(".");
   }
