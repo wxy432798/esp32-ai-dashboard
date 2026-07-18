@@ -20,7 +20,13 @@ def main() -> int:
     from renderer import ensure_rendered_frame
     from tools.publish_eink_to_oss import _frame_info, _load_env_file, _put_object
 
-    subprocess.run([python_bin, str(repo_dir / "tools" / "mac_usage_reporter.py")], check=True)
+    usage_result = subprocess.run([python_bin, str(repo_dir / "tools" / "mac_usage_reporter.py")], check=False)
+    if usage_result.returncode != 0:
+        print(
+            f"warning: usage reporter failed with exit code {usage_result.returncode}; "
+            "rendering with the latest server-side usage snapshot",
+            file=sys.stderr,
+        )
 
     with urllib.request.urlopen(source.rstrip("/") + "/api/eink-dashboard", timeout=20) as response:
         payload = json.loads(response.read().decode("utf-8") or "{}")

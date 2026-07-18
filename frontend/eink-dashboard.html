@@ -194,7 +194,12 @@
         ctx.lineWidth = width;
         ctx.strokeRect(x + 0.5, y + 0.5, w - 1, h - 1);
       };
-      const font = (size, weight = 600, cjk = false) => `${weight} ${size}px "Ark Pixel 12px Prop latin", "Pixelify Sans", ${cjk ? '"Noto Sans CJK SC", "PingFang SC", ' : ''}"Menlo", "Monaco", monospace`;
+      const font = (size, weight = 600, cjk = false) => {
+        const family = cjk
+          ? '"Ark Pixel 12px Prop latin", "Pixelify Sans", "Noto Sans CJK SC", "PingFang SC", "Menlo", "Monaco", monospace'
+          : '"Pixelify Sans", "Ark Pixel 12px Prop latin", "Menlo", "Monaco", monospace';
+        return `${weight} ${size}px ${family}`;
+      };
       const text = (value, x, y, size, options = {}) => {
         ctx.font = font(size, options.weight || 600, options.cjk || false);
         ctx.textAlign = options.align || "left";
