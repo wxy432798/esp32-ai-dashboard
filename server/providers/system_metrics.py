@@ -5,7 +5,11 @@ from pathlib import Path
 
 def _read_meminfo() -> dict:
     values = {}
-    for line in Path("/proc/meminfo").read_text(errors="ignore").splitlines():
+    try:
+        lines = Path("/proc/meminfo").read_text(errors="ignore").splitlines()
+    except FileNotFoundError:
+        return values
+    for line in lines:
         if ":" not in line:
             continue
         key, raw = line.split(":", 1)
@@ -34,7 +38,10 @@ def _ram_percent() -> int:
 
 
 def _disk_percent(path="/") -> int:
-    usage = shutil.disk_usage(path)
+    try:
+        usage = shutil.disk_usage(path)
+    except OSError:
+        return 0
     if not usage.total:
         return 0
     return max(0, min(100, round((usage.used / usage.total) * 100)))
@@ -60,4 +67,3 @@ def get_server_status() -> dict:
         "load_avg": round(load, 2),
         "uptime": _uptime(),
     }
-

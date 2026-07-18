@@ -5,6 +5,6 @@
 
 class DashboardApi {
  public:
-  bool fetch(DashboardData& out, String& error);
+  bool fetchManifest(FrameManifest& manifest, String& error);
+  bool fetchFrame(const FrameManifest& manifest, EInkFrame& frame, String& error);
 };
-

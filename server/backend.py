@@ -1,11 +1,15 @@
 #!/usr/bin/env python3
 import argparse
 import json
+import os
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from pathlib import Path
+from urllib.parse import parse_qs, urlparse
+from zoneinfo import ZoneInfo, ZoneInfoNotFoundError
 
-from providers.ai_usage import get_ai_usage
+from providers.ai_usage import get_ai_usage, save_ai_usage
+from renderer import ensure_rendered_frame
 from providers.system_metrics import get_server_status
 from providers.weather import get_weather
 from state_store import add_todo, delete_todo, load_note, load_todos, save_note, set_todo_done
@@ -14,21 +18,82 @@ from state_store import add_todo, delete_todo, load_note, load_todos, save_note,
 DEFAULT_REFRESH_SEC = 300
 
 
+class DashboardHTTPServer(ThreadingHTTPServer):
+    def server_bind(self):
+        self.socket.bind(self.server_address)
+        self.server_name = self.server_address[0]
+        self.server_port = self.server_address[1]
+
+
+def _usage_percent(block):
+    if isinstance(block, dict):
+        for key in ("daily_percent", "used_percent", "percent"):
+            value = block.get(key)
+            if isinstance(value, (int, float)):
+                return int(value)
+    if isinstance(block, (int, float)):
+        return int(block)
+    return -1
+
+
 def dashboard_payload(refresh_interval_sec=DEFAULT_REFRESH_SEC):
+    server = get_server_status()
+    claude = get_ai_usage("claude")
+    codex = get_ai_usage("codex")
+    todos = load_todos(limit=7)
+    tz_name = os.environ.get("DASHBOARD_TZ", "UTC")
+    try:
+        now = datetime.now(ZoneInfo(tz_name))
+    except ZoneInfoNotFoundError:
+        now = datetime.now()
     return {
         "refresh_interval_sec": refresh_interval_sec,
-        "updated_at": datetime.now().strftime("%Y-%m-%d %H:%M"),
-        "claude": get_ai_usage("claude"),
-        "codex": get_ai_usage("codex"),
-        "server": get_server_status(),
+        "refresh_interval": refresh_interval_sec,
+        "updated_at": now.strftime("%Y-%m-%d %H:%M"),
+        "timezone": tz_name,
+        "claude": claude,
+        "codex": codex,
+        "ai": {
+            "claude": -1,
+            "codex": _usage_percent(codex),
+        },
+        "online": server.get("online", True),
+        "cpu": server.get("cpu", -1),
+        "ram": server.get("ram", -1),
+        "disk": server.get("disk", -1),
+        "load_avg": str(server.get("load_avg", "")),
+        "uptime": server.get("uptime", ""),
+        "server": server,
         "weather": get_weather(),
-        "todos": load_todos(limit=7),
+        "todos": todos,
+        "todo_items": todos,
+        "todo_count": len(todos),
         "note": load_note(),
     }
 
 
 class Handler(BaseHTTPRequestHandler):
     refresh_interval_sec = DEFAULT_REFRESH_SEC
+    esp32_api_key = ""
+    admin_api_key = ""
+
+    def _authorized(self):
+        if not self.esp32_api_key:
+            return True
+        auth = self.headers.get("authorization") or ""
+        key = self.headers.get("x-api-key") or ""
+        if auth.lower().startswith("bearer "):
+            key = auth[7:]
+        return key.strip() == self.esp32_api_key
+
+    def _admin_authorized(self):
+        if not self.admin_api_key:
+            return False
+        auth = self.headers.get("authorization") or ""
+        key = self.headers.get("x-api-key") or ""
+        if auth.lower().startswith("bearer "):
+            key = auth[7:]
+        return key.strip() == self.admin_api_key
 
     def _json(self, status, body):
         raw = json.dumps(body, ensure_ascii=False).encode("utf-8")
@@ -37,27 +102,132 @@ class Handler(BaseHTTPRequestHandler):
         self.send_header("cache-control", "no-store")
         self.send_header("content-length", str(len(raw)))
         self.end_headers()
-        self.wfile.write(raw)
+        if self.command != "HEAD":
+            self.wfile.write(raw)
+
+    def _bytes(self, status, content_type, raw, cache_control="public, max-age=60"):
+        self.send_response(status)
+        self.send_header("content-type", content_type)
+        self.send_header("cache-control", cache_control)
+        self.send_header("content-length", str(len(raw)))
+        self.end_headers()
+        if self.command != "HEAD":
+            self.wfile.write(raw)
+
+    def _render_file_response(self, file_path, content_type):
+        raw = file_path.read_bytes()
+        query = parse_qs(urlparse(self.path).query)
+        range_header = self.headers.get("range") or self.headers.get("Range") or ""
+        if range_header.lower().startswith("bytes=") and "-" in range_header:
+            try:
+                start_raw, end_raw = range_header[6:].split("-", 1)
+                offset = max(0, int(start_raw))
+                end = min(len(raw) - 1, int(end_raw) if end_raw else len(raw) - 1)
+            except ValueError:
+                self._json(416, {"error": "invalid range"})
+                return
+            if offset > len(raw) or end < offset:
+                self._json(416, {"error": "range outside frame"})
+                return
+            chunk = raw[offset:end + 1]
+            self.send_response(206)
+            self.send_header("content-type", content_type)
+            self.send_header("cache-control", "public, max-age=60")
+            self.send_header("content-length", str(len(chunk)))
+            self.send_header("accept-ranges", "bytes")
+            self.send_header("content-range", f"bytes {offset}-{end}/{len(raw)}")
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(chunk)
+            return
+        if "offset" in query or "length" in query:
+            try:
+                offset = max(0, int(query.get("offset", ["0"])[0]))
+                length = max(0, int(query.get("length", [str(len(raw) - offset)])[0]))
+            except ValueError:
+                self._json(400, {"error": "invalid offset/length"})
+                return
+            if offset > len(raw):
+                self._json(416, {"error": "offset outside frame"})
+                return
+            chunk = raw[offset:offset + length]
+            self.send_response(206)
+            self.send_header("content-type", content_type)
+            self.send_header("cache-control", "public, max-age=60")
+            self.send_header("content-length", str(len(chunk)))
+            self.send_header("accept-ranges", "bytes")
+            self.send_header("content-range", f"bytes {offset}-{offset + len(chunk) - 1}/{len(raw)}")
+            self.end_headers()
+            if self.command != "HEAD":
+                self.wfile.write(chunk)
+            return
+        self._bytes(200, content_type, raw)
 
     def _read_json(self):
         length = int(self.headers.get("content-length") or "0")
         raw = self.rfile.read(length) if length else b"{}"
         return json.loads(raw.decode("utf-8") or "{}")
 
+    def _render_manifest(self):
+        payload = dashboard_payload(self.refresh_interval_sec)
+        return ensure_rendered_frame(payload, self.refresh_interval_sec)
+
     def do_GET(self):
         path = urlparse(self.path).path
-        if path == "/healthz":
+        if path in ("/health", "/healthz"):
             self._json(200, {"ok": True})
             return
         if path == "/api/eink-dashboard":
+            if not self._authorized():
+                self._json(401, {"error": "missing or invalid api key"})
+                return
             self._json(200, dashboard_payload(self.refresh_interval_sec))
             return
+        if path in ("/render/manifest.json", "/render/eink.png", "/render/eink.bin"):
+            if not self._authorized():
+                self._json(401, {"error": "missing or invalid api key"})
+                return
+            try:
+                manifest = self._render_manifest()
+                if path == "/render/manifest.json":
+                    public = {key: value for key, value in manifest.items() if key != "cache"}
+                    self._json(200, public)
+                    return
+                cache_key = "png" if path.endswith(".png") else "bin"
+                file_path = Path(manifest["cache"][cache_key])
+                content_type = "image/png" if cache_key == "png" else "application/octet-stream"
+                self._render_file_response(file_path, content_type)
+                return
+            except Exception as exc:
+                self._json(503, {"error": "render failed", "detail": str(exc)})
+                return
         self._json(404, {"error": "not found"})
+
+    def do_HEAD(self):
+        self.do_GET()
 
     def do_POST(self):
         path = urlparse(self.path).path
         try:
             data = self._read_json()
+            if path == "/api/usage":
+                if not self._admin_authorized():
+                    self._json(401, {"error": "missing or invalid admin api key"})
+                    return
+                saved = {}
+                if "claude" in data:
+                    saved["claude"] = save_ai_usage("claude", data["claude"])
+                if "codex" in data:
+                    saved["codex"] = save_ai_usage("codex", data["codex"])
+                if not saved:
+                    agent = str(data.get("agent") or "").strip().lower()
+                    usage = data.get("usage")
+                    if agent not in ("claude", "codex"):
+                        self._json(400, {"error": "expected claude/codex block or agent"})
+                        return
+                    saved[agent] = save_ai_usage(agent, usage)
+                self._json(200, {"ok": True, "usage": saved})
+                return
             if path == "/api/todo":
                 action = data.get("action")
                 if action == "add":
@@ -93,11 +263,12 @@ def main():
     args = parser.parse_args()
 
     Handler.refresh_interval_sec = args.refresh
-    server = ThreadingHTTPServer((args.host, args.port), Handler)
+    Handler.esp32_api_key = os.environ.get("ESP32_API_KEY", "").strip()
+    Handler.admin_api_key = os.environ.get("ADMIN_API_KEY", "").strip()
+    server = DashboardHTTPServer((args.host, args.port), Handler)
     print(f"E-ink dashboard backend: http://{args.host}:{args.port}/api/eink-dashboard")
     server.serve_forever()
 
 
 if __name__ == "__main__":
     main()
-

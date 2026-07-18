@@ -1,29 +1,366 @@
 #include "DashboardApi.h"
 
-#include <HTTPClient.h>
+#include <ArduinoJson.h>
 #include <WiFiClient.h>
+#include <lwip/sockets.h>
 
 #include "config.h"
 
-bool DashboardApi::fetch(DashboardData& out, String& error) {
-  WiFiClient client;
-  HTTPClient http;
-  http.setTimeout(12000);
-
-  if (!http.begin(client, DASHBOARD_API_URL)) {
-    error = "http.begin failed";
-    return false;
-  }
-
-  int code = http.GET();
-  if (code != HTTP_CODE_OK) {
-    error = "HTTP " + String(code);
-    http.end();
-    return false;
-  }
-
-  String payload = http.getString();
-  http.end();
-  return parseDashboardJson(payload, out, error);
+static uint16_t readLe16(const uint8_t* data) {
+  return static_cast<uint16_t>(data[0]) |
+         (static_cast<uint16_t>(data[1]) << 8);
 }
 
+static uint32_t readLe32(const uint8_t* data) {
+  return static_cast<uint32_t>(data[0]) |
+         (static_cast<uint32_t>(data[1]) << 8) |
+         (static_cast<uint32_t>(data[2]) << 16) |
+         (static_cast<uint32_t>(data[3]) << 24);
+}
+
+static uint32_t parseHex32(const String& value) {
+  uint32_t out = 0;
+  for (size_t i = 0; i < value.length(); i++) {
+    char c = value[i];
+    uint8_t nibble;
+    if (c >= '0' && c <= '9') nibble = c - '0';
+    else if (c >= 'a' && c <= 'f') nibble = c - 'a' + 10;
+    else if (c >= 'A' && c <= 'F') nibble = c - 'A' + 10;
+    else continue;
+    out = (out << 4) | nibble;
+  }
+  return out;
+}
+
+static uint32_t crc32Update(uint32_t crc, const uint8_t* data, size_t len) {
+  crc = ~crc;
+  for (size_t i = 0; i < len; i++) {
+    crc ^= data[i];
+    for (uint8_t bit = 0; bit < 8; bit++) {
+      crc = (crc >> 1) ^ (0xEDB88320UL & (0UL - (crc & 1UL)));
+    }
+  }
+  return ~crc;
+}
+
+static bool readHttpLine(WiFiClient& client, String& line, uint32_t timeoutMs) {
+  line = "";
+  uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    while (client.available()) {
+      char c = static_cast<char>(client.read());
+      if (c == '\n') {
+        line.trim();
+        return true;
+      }
+      line += c;
+      if (line.length() > 256) return false;
+    }
+    if (!client.connected() && !client.available()) return line.length() > 0;
+    delay(5);
+  }
+  return false;
+}
+
+static bool openHttpGet(WiFiClient& client, const char* path, const char* accept,
+                        int& contentLength, String& error,
+                        int32_t rangeStart = -1, int32_t rangeEnd = -1) {
+  client.setTimeout(120);
+  contentLength = -1;
+
+  if (rangeStart >= 0 && rangeEnd >= rangeStart) {
+    Serial.printf("GET http://%s%s Range=%ld-%ld\n",
+                  DASHBOARD_API_HOST, path,
+                  static_cast<long>(rangeStart), static_cast<long>(rangeEnd));
+  } else {
+    Serial.printf("GET http://%s%s\n", DASHBOARD_API_HOST, path);
+  }
+  if (!client.connect(DASHBOARD_API_HOST, DASHBOARD_API_PORT, 20000)) {
+    error = "HTTP TCP connect failed";
+    return false;
+  }
+  client.setNoDelay(true);
+  const int enable = 1;
+  const int keepIdleSeconds = 15;
+  const int keepIntervalSeconds = 5;
+  const int keepCount = 3;
+  client.setSocketOption(SOL_SOCKET, SO_KEEPALIVE, &enable, sizeof(enable));
+  client.setSocketOption(IPPROTO_TCP, TCP_KEEPIDLE, &keepIdleSeconds, sizeof(keepIdleSeconds));
+  client.setSocketOption(IPPROTO_TCP, TCP_KEEPINTVL, &keepIntervalSeconds, sizeof(keepIntervalSeconds));
+  client.setSocketOption(IPPROTO_TCP, TCP_KEEPCNT, &keepCount, sizeof(keepCount));
+
+  client.printf("GET %s HTTP/1.1\r\n", path);
+  client.printf("Host: %s\r\n", DASHBOARD_API_HOST);
+  client.print("User-Agent: esp32-ai-dashboard/2.0\r\n");
+  client.printf("Accept: %s\r\n", accept);
+  client.print("Accept-Encoding: identity\r\n");
+  if (rangeStart >= 0 && rangeEnd >= rangeStart) {
+    client.printf("Range: bytes=%ld-%ld\r\n",
+                  static_cast<long>(rangeStart), static_cast<long>(rangeEnd));
+  }
+  client.print("Connection: close\r\n");
+  if (String(ESP32_API_KEY).length() > 0) {
+    client.printf("X-API-Key: %s\r\n", ESP32_API_KEY);
+  }
+  client.print("\r\n");
+  client.flush();
+
+  String line;
+  if (!readHttpLine(client, line, 30000)) {
+    error = "HTTP status read failed";
+    client.stop();
+    return false;
+  }
+  Serial.println(line);
+  if (!line.startsWith("HTTP/1.") ||
+      (line.indexOf(" 200 ") < 0 && line.indexOf(" 206 ") < 0)) {
+    error = "Bad HTTP status: " + line;
+    client.stop();
+    return false;
+  }
+
+  while (readHttpLine(client, line, 30000)) {
+    if (line.length() == 0) break;
+    if (line.startsWith("Content-Length:") || line.startsWith("content-length:")) {
+      contentLength = line.substring(line.indexOf(':') + 1).toInt();
+    }
+  }
+  return true;
+}
+
+static bool readTextBody(WiFiClient& client, String& body, int contentLength,
+                         uint32_t timeoutMs, String& error) {
+  body = "";
+  body.reserve(contentLength > 0 ? contentLength + 1 : 512);
+
+  uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    while (client.available()) {
+      body += static_cast<char>(client.read());
+      if (contentLength >= 0 && body.length() >= static_cast<size_t>(contentLength)) {
+        return true;
+      }
+      if (body.length() > 4096) {
+        error = "HTTP text body too large";
+        return false;
+      }
+    }
+    if (contentLength < 0 && !client.connected()) return body.length() > 0;
+    delay(5);
+  }
+  error = "HTTP text timeout " + String(body.length()) + "/" + String(contentLength);
+  return false;
+}
+
+static bool readExact(WiFiClient& client, uint8_t* out, size_t len,
+                      uint32_t timeoutMs, String& error) {
+  size_t got = 0;
+  size_t nextProgress = 4096;
+  uint32_t start = millis();
+  while (millis() - start < timeoutMs) {
+    int available = client.available();
+    while (available > 0 && got < len) {
+      const size_t toRead = min(static_cast<size_t>(available), min(len - got, static_cast<size_t>(512)));
+      const int readNow = client.read(out + got, toRead);
+      if (readNow <= 0) break;
+      got += static_cast<size_t>(readNow);
+      available -= readNow;
+      if (got >= nextProgress || got >= len) {
+        Serial.printf("HTTP binary read %u/%u\n",
+                      static_cast<unsigned>(got), static_cast<unsigned>(len));
+        nextProgress += 4096;
+      }
+      if (got >= len) return true;
+    }
+    if (!client.connected() && !client.available()) break;
+    delay(5);
+  }
+  error = "HTTP binary short read " + String(got) + "/" + String(len);
+  return false;
+}
+
+static void copyFrameByte(EInkFrame& frame, uint8_t* header, size_t absoluteOffset,
+                          uint8_t value) {
+  static const size_t HEADER_LEN = 26;
+  if (absoluteOffset < HEADER_LEN) {
+    header[absoluteOffset] = value;
+    return;
+  }
+
+  const size_t payloadOffset = absoluteOffset - HEADER_LEN;
+  if (payloadOffset < EINK_PLANE_BYTES) {
+    frame.black[payloadOffset] = value;
+  } else if (payloadOffset < EINK_PLANE_BYTES * 2) {
+    frame.red[payloadOffset - EINK_PLANE_BYTES] = value;
+  }
+}
+
+static bool fetchFrameChunk(const String& basePath, size_t offset, size_t expected,
+                            uint8_t* chunk, String& error) {
+  const String rangePath = basePath;
+  const String queryPath = basePath + "?offset=" + String(static_cast<unsigned>(offset)) +
+                           "&length=" + String(static_cast<unsigned>(expected));
+
+  static const uint8_t CHUNK_ATTEMPTS = 15;
+  for (uint8_t attempt = 1; attempt <= CHUNK_ATTEMPTS; attempt++) {
+    Serial.printf("Chunk %u attempt %u/%u\n",
+                  static_cast<unsigned>(offset), attempt, CHUNK_ATTEMPTS);
+    WiFiClient client;
+    int contentLength = -1;
+    const int32_t rangeStart = static_cast<int32_t>(offset);
+    const int32_t rangeEnd = static_cast<int32_t>(offset + expected - 1);
+    bool opened = openHttpGet(client, rangePath.c_str(), "application/octet-stream",
+                              contentLength, error, rangeStart, rangeEnd);
+    if (!opened) {
+      client.stop();
+      Serial.printf("Range chunk failed, trying query fallback: %s\n", error.c_str());
+      if (!openHttpGet(client, queryPath.c_str(), "application/octet-stream",
+                       contentLength, error)) {
+        delay(500);
+        continue;
+      }
+    }
+    if (contentLength >= 0 && contentLength != static_cast<int>(expected)) {
+      error = "Bad chunk length " + String(contentLength) + "/" + String(expected);
+      client.stop();
+      delay(500);
+      continue;
+    }
+    if (!readExact(client, chunk, expected, 30000, error)) {
+      client.stop();
+      delay(500);
+      continue;
+    }
+    client.stop();
+    return true;
+  }
+  return false;
+}
+
+bool DashboardApi::fetchManifest(FrameManifest& manifest, String& error) {
+  for (uint8_t attempt = 1; attempt <= 5; attempt++) {
+    Serial.printf("Manifest attempt %u/5\n", attempt);
+    WiFiClient client;
+    int contentLength = -1;
+    if (!openHttpGet(client, DASHBOARD_MANIFEST_PATH, "application/json",
+                     contentLength, error)) {
+      delay(2000);
+      continue;
+    }
+
+    String payload;
+    bool ok = readTextBody(client, payload, contentLength, 30000, error);
+    client.stop();
+    if (!ok) {
+      delay(2000);
+      continue;
+    }
+
+    JsonDocument doc;
+    DeserializationError jsonError = deserializeJson(doc, payload);
+    if (jsonError) {
+      error = jsonError.c_str();
+      return false;
+    }
+
+    manifest.version = String(doc["version"] | "");
+    manifest.url = String(doc["url"] | DASHBOARD_FRAME_PATH);
+    manifest.crc32Hex = String(doc["crc32"] | "");
+    manifest.crc32 = parseHex32(manifest.crc32Hex);
+    manifest.width = doc["width"] | 0;
+    manifest.height = doc["height"] | 0;
+    manifest.refreshSeconds = doc["refresh_interval"] | DEFAULT_REFRESH_SECONDS;
+    manifest.bytes = doc["bytes"] | 0;
+
+    if (manifest.width != EINK_FRAME_WIDTH || manifest.height != EINK_FRAME_HEIGHT) {
+      error = "Bad manifest size";
+      return false;
+    }
+    if (manifest.url.length() == 0 || manifest.crc32 == 0) {
+      error = "Manifest missing frame url/crc";
+      return false;
+    }
+    Serial.printf("Manifest ok version=%s crc=%s bytes=%lu refresh=%us\n",
+                  manifest.version.c_str(), manifest.crc32Hex.c_str(),
+                  static_cast<unsigned long>(manifest.bytes),
+                  manifest.refreshSeconds);
+    return true;
+  }
+  return false;
+}
+
+bool DashboardApi::fetchFrame(const FrameManifest& manifest, EInkFrame& frame,
+                              String& error) {
+  for (uint8_t attempt = 1; attempt <= 5; attempt++) {
+    Serial.printf("Frame attempt %u/5\n", attempt);
+    static const size_t HEADER_LEN = 26;
+    uint8_t header[HEADER_LEN];
+    memset(header, 0, sizeof(header));
+    memset(frame.black, 0, EINK_PLANE_BYTES);
+    memset(frame.red, 0, EINK_PLANE_BYTES);
+
+    const String basePath = manifest.url.length() ? manifest.url : String(DASHBOARD_FRAME_PATH);
+    const size_t totalBytes = manifest.bytes > 0 ? manifest.bytes : HEADER_LEN + EINK_PLANE_BYTES * 2;
+    static const size_t CHUNK_LEN = 4096;
+    uint8_t chunk[CHUNK_LEN];
+    bool downloaded = true;
+
+    for (size_t offset = 0; offset < totalBytes; offset += CHUNK_LEN) {
+      const size_t expected = min(CHUNK_LEN, totalBytes - offset);
+
+      if (!fetchFrameChunk(basePath, offset, expected, chunk, error)) {
+        downloaded = false;
+        break;
+      }
+
+      for (size_t i = 0; i < expected; i++) {
+        copyFrameByte(frame, header, offset + i, chunk[i]);
+      }
+      Serial.printf("Frame chunk %u/%u\n",
+                    static_cast<unsigned>(offset + expected),
+                    static_cast<unsigned>(totalBytes));
+    }
+
+    if (!downloaded) {
+      delay(2000);
+      continue;
+    }
+
+    if (memcmp(header, "EINK3C01", 8) != 0) {
+      error = "Bad frame magic";
+      return false;
+    }
+    const uint16_t width = readLe16(header + 8);
+    const uint16_t height = readLe16(header + 10);
+    const uint32_t blackLen = readLe32(header + 14);
+    const uint32_t redLen = readLe32(header + 18);
+    const uint32_t payloadCrc = readLe32(header + 22);
+
+    if (width != EINK_FRAME_WIDTH || height != EINK_FRAME_HEIGHT ||
+        blackLen != EINK_PLANE_BYTES || redLen != EINK_PLANE_BYTES) {
+      error = "Bad frame geometry";
+      return false;
+    }
+    if (totalBytes != HEADER_LEN + blackLen + redLen) {
+      error = "Bad frame byte length";
+      return false;
+    }
+
+    uint32_t crc = 0;
+    crc = crc32Update(crc, frame.black, EINK_PLANE_BYTES);
+    crc = crc32Update(crc, frame.red, EINK_PLANE_BYTES);
+    if (crc != payloadCrc || crc != manifest.crc32) {
+      error = "CRC mismatch";
+      Serial.printf("crc got=%08lx header=%08lx manifest=%08lx\n",
+                    static_cast<unsigned long>(crc),
+                    static_cast<unsigned long>(payloadCrc),
+                    static_cast<unsigned long>(manifest.crc32));
+      return false;
+    }
+
+    frame.crc32 = crc;
+    Serial.printf("Frame ok crc=%08lx\n", static_cast<unsigned long>(frame.crc32));
+    return true;
+  }
+  return false;
+}

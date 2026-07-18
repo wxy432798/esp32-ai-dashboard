@@ -5,8 +5,32 @@
 #define WIFI_SSID "YOUR_WIFI"
 #define WIFI_PASSWORD "YOUR_WIFI_PASSWORD"
 
-// Example: "http://192.168.1.10:8787/api/eink-dashboard"
-#define DASHBOARD_API_URL "http://192.168.1.10:8787/api/eink-dashboard"
+// Optional: add multiple known networks so the device can roam without
+// reflashing firmware whenever you switch hotspot/router.
+// #define WIFI_NETWORKS { \
+//   {"YOUR_HOME_WIFI", "YOUR_HOME_PASSWORD"}, \
+//   {"YOUR_PHONE_HOTSPOT", "YOUR_PHONE_PASSWORD"}, \
+// }
+
+// Long-press the side button, or hold it while booting, to start this setup AP.
+// Then join this Wi-Fi from your phone and open http://192.168.4.1/.
+#define CONFIG_PORTAL_AP_SSID "ESP32-Dashboard"
+#define CONFIG_PORTAL_AP_PASSWORD "configure"
+
+// The raw HTTP client uses host/port/path so it can retry reliably on ESP32.
+#define DASHBOARD_API_HOST "YOUR_SERVER"
+#define DASHBOARD_API_PORT 80
+#define DASHBOARD_MANIFEST_PATH "/render/manifest.json"
+#define DASHBOARD_FRAME_PATH "/render/eink.bin"
+
+// OSS direct-read example. Keep OSS AccessKey only on Mac/server upload side.
+// #define DASHBOARD_API_HOST "claudecodesapi.oss-cn-chengdu.aliyuncs.com"
+// #define DASHBOARD_API_PORT 80
+// #define DASHBOARD_MANIFEST_PATH "/render/manifest.json"
+// #define DASHBOARD_FRAME_PATH "/render/eink.bin"
+
+// Optional. Leave empty if the backend endpoint is in open test mode.
+#define ESP32_API_KEY ""
 
 // Refresh fallback if the server does not provide meta.refresh_seconds.
 #define DEFAULT_REFRESH_SECONDS 300
@@ -14,7 +38,7 @@
 // Side button: active LOW, using INPUT_PULLUP.
 #define PIN_SIDE_BUTTON 0
 
-// Typical ESP32 + e-paper SPI wiring. Adjust to your board.
+// Confirmed ESP32 + GDEY042Z98 e-paper SPI wiring.
 #define EPD_BUSY 4
 #define EPD_RST 16
 #define EPD_DC 17
